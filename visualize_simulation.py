@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FDTD Laser Simulation Visualization with Source Overlay
+FDTD Laser Simulation Visualization
 
 This script creates comprehensive visualizations of the FDTD simulation results,
 showing the electric field evolution with all laser sources clearly marked.
@@ -103,7 +103,7 @@ class FDTDVisualizerWithSources:
         print(f"Column 1 sources: {self.sources_column1}")
         print(f"Column 2 sources: {self.sources_column2}")
         print(f"Total sources: {len(self.all_sources)}")
-    
+
     def load_field_data(self):
         """Load all field data files."""
         # Find all Ey field files
@@ -198,7 +198,7 @@ class FDTDVisualizerWithSources:
         
         # Add geometry and sources
         self.create_base_plot(ax)
-        
+
         # Labels and title
         ax.set_xlabel('X (grid points)', fontsize=12)
         ax.set_ylabel('Y (grid points)', fontsize=12)
@@ -251,8 +251,8 @@ class FDTDVisualizerWithSources:
         
         print("All plots saved!")
     
-    def create_animation(self, interval=200, save_animation=True):
-        """Create an animation of the field evolution."""
+    def create_animation(self, interval=400, save_animation=True):
+        """Create a slow animation of the field evolution and save as GIF."""
         if not self.field_data:
             print("No field data available for animation")
             return None
@@ -289,24 +289,27 @@ class FDTDVisualizerWithSources:
         # Add parameter text
         self.add_parameter_text(ax)
         
+        # Prepare animation elements
         def animate(frame):
             timestep = timesteps[frame]
             data = self.field_data[timestep]
             im.set_array(data.T)
             title.set_text(f'FDTD Simulation - Timestep {timestep}\n'
                           f'Inter-pillar Laser Sources (8 total)')
+            
             return [im, title]
         
-        # Create animation
+        # Create animation with a longer interval for a slower speed
         anim = animation.FuncAnimation(fig, animate, frames=len(timesteps), 
-                                     interval=interval, blit=False, repeat=True)
+                                     interval=interval, blit=False, repeat=False)
         
         if save_animation:
             output_file = self.data_dir / "field_animation.gif"
             print(f"Saving animation to {output_file}...")
-            anim.save(output_file, writer='pillow', fps=5, dpi=150)
+            # Use a low fps for a slower GIF
+            anim.save(str(output_file), writer='pillow', fps=2, dpi=120)
             print(f"Animation saved: {output_file}")
-        
+
         plt.tight_layout()
         plt.show()
         
@@ -355,8 +358,8 @@ class FDTDVisualizerWithSources:
 
 def main():
     """Main function to run the visualization."""
-    print("FDTD Laser Simulation Visualizer with Source Overlay")
-    print("=" * 55)
+    print("FDTD Laser Simulation Visualizer")
+    print("=" * 35)
     
     # Initialize visualizer
     visualizer = FDTDVisualizerWithSources(".")
@@ -387,7 +390,7 @@ def main():
     # Ask about animation
     response = input("\n4. Do you want to create an animation? (y/n): ").strip().lower()
     if response == 'y':
-        visualizer.create_animation()
+        visualizer.create_animation(interval=100) # Speed up animation a bit
     
     print("\nVisualization complete!")
 

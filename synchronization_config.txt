@@ -1,0 +1,130 @@
+# Synchronization Configuration for FDTD Laser Acceleration
+# 
+# This file contains parameters for optimizing electron-field synchronization
+# Modify these values and recompile to test different synchronization strategies
+
+# ============================================================================
+# TIMING PARAMETERS
+# ============================================================================
+
+# Field buildup time before attempting electron injection (time steps)
+FIELD_BUILDUP_TIME = 100
+
+# Maximum time to search for optimal injection window (time steps)  
+MAX_SEARCH_TIME = 300
+
+# ============================================================================
+# SYNCHRONIZATION THRESHOLDS
+# ============================================================================
+
+# Minimum field strength for injection (fraction of peak inter-pillar intensity)
+# For electron acceleration, negative fields are accelerating
+MIN_FIELD_THRESHOLD = 0.5
+
+# Phase tolerance for phase-locked injection (degrees)
+PHASE_TOLERANCE = 10.0
+
+# Target phase for injection (degrees)
+# 270° typically provides maximum acceleration for electrons
+TARGET_PHASE = 270.0
+
+# ============================================================================
+# ELECTRON PARAMETERS
+# ============================================================================
+
+# Initial electron energy (eV)
+INITIAL_ELECTRON_ENERGY = 100.0
+
+# Injection position offset from nominal (grid points)
+INJECTION_X_OFFSET = 0
+INJECTION_Y_OFFSET = 0
+
+# ============================================================================
+# ADVANCED SYNCHRONIZATION
+# ============================================================================
+
+# Require sustained acceleration during transit (fraction of time)
+SUSTAINED_ACCELERATION_FRACTION = 0.6
+
+# Field sampling interval for sustained acceleration check (time steps)
+FIELD_SAMPLING_INTERVAL = 5
+
+# Enable/disable different synchronization methods:
+ENABLE_FIELD_THRESHOLD_SYNC = True
+ENABLE_PHASE_LOCK_SYNC = False
+ENABLE_SUSTAINED_ACCELERATION_CHECK = True
+
+# ============================================================================
+# DIAGNOSTICS
+# ============================================================================
+
+# Save field data interval (time steps)
+FIELD_SAVE_INTERVAL = 50
+
+# Save electron trajectory interval (time steps)
+TRAJECTORY_SAVE_INTERVAL = 10
+
+# Print field diagnostics during simulation
+PRINT_FIELD_DIAGNOSTICS = True
+
+# ============================================================================
+# FREQUENCY PARAMETERS
+# ============================================================================
+
+# Primary driving frequency (Hz) - should match laser frequency in simulation
+# This is used for phase calculations
+PRIMARY_FREQUENCY = 1e14
+
+# Expected field oscillation period (time steps)
+# Auto-calculated from frequency, but can be manually set if needed
+# FIELD_PERIOD = (1.0 / PRIMARY_FREQUENCY) / TIME_STEP
+
+# ============================================================================
+# GEOMETRY CONSIDERATIONS
+# ============================================================================
+
+# Account for field propagation delay across the structure
+CONSIDER_PROPAGATION_DELAY = True
+
+# Speed of light in vacuum (m/s)
+SPEED_OF_LIGHT = 3e8
+
+# ============================================================================
+# OPTIMIZATION STRATEGIES
+# ============================================================================
+
+# Strategy 1: Field-based injection
+# Inject when local field exceeds threshold
+
+# Strategy 2: Phase-locked injection  
+# Inject at specific phase of driving frequency
+
+# Strategy 3: Predictive injection
+# Analyze field pattern and predict optimal timing
+
+# Strategy 4: Adaptive injection
+# Monitor electron progress and adjust timing
+
+# Current active strategy (1-4)
+ACTIVE_STRATEGY = 1
+
+# ============================================================================
+# NOTES
+# ============================================================================
+
+# For optimal synchronization:
+# 1. The electron should enter the acceleration gap when the field is maximum
+# 2. The field should remain accelerating for most of the transit time
+# 3. Consider the relativistic effects for high-energy electrons
+# 4. Account for space charge effects with multiple electrons
+
+# Typical synchronization approaches:
+# - Cavity-based: Electron bunch synchronized with cavity RF phase
+# - Laser-based: Electron pulse synchronized with laser pulse
+# - Grating-based: Continuous injection with phase matching
+
+# For this simulation:
+# - Monitor field at injection point
+# - Calculate electron transit time
+# - Ensure field remains favorable during transit
+# - Consider multiple injection opportunities per period

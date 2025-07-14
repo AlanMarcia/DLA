@@ -1,0 +1,214 @@
+# FDTD Laser Simulation - Git Ignore File
+# Excludes generated data files, build artifacts, and temporary files
+
+# ============================================================================
+# SIMULATION OUTPUT DATA FILES
+# ============================================================================
+
+# Electric field data files
+Ey_field_*.dat
+Ex_field_*.dat
+Ez_field_*.dat
+
+# Magnetic field data files
+Hx_field_*.dat
+Hy_field_*.dat
+Hz_field_*.dat
+
+# Geometry and parameter files (generated)
+geometry_params.txt
+
+# Electron trajectory data (if any)
+electron_trajectory.txt
+
+# ============================================================================
+# VISUALIZATION OUTPUT FILES
+# ============================================================================
+
+# Generated plots and images
+field_plot_t*.png
+simulation_overview.png
+field_analysis.png
+synchronization_analysis.png
+
+# Animation files
+field_animation.gif
+*.mp4
+*.avi
+
+# ============================================================================
+# BUILD ARTIFACTS (C++)
+# ============================================================================
+
+# Compiled executables
+*.exe
+Laser
+Laser.exe
+laser
+laser.exe
+
+# Object files
+*.o
+*.obj
+
+# Static libraries
+*.a
+*.lib
+
+# Shared libraries
+*.so
+*.dll
+*.dylib
+
+# Debug files
+*.pdb
+*.dSYM/
+
+# ============================================================================
+# COMPILER AND IDE FILES
+# ============================================================================
+
+# Visual Studio files
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+*.sln
+*.suo
+*.user
+.vs/
+
+# Code::Blocks files
+*.cbp
+*.layout
+*.depend
+
+# Dev-C++ files
+*.dev
+
+# Makefile generated files (if auto-generated)
+Makefile.deps
+
+# ============================================================================
+# PYTHON CACHE AND TEMPORARY FILES
+# ============================================================================
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Virtual environments
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# ============================================================================
+# SYSTEM AND EDITOR FILES
+# ============================================================================
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# Linux
+*~
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# ============================================================================
+# TEMPORARY AND LOG FILES
+# ============================================================================
+
+# Log files
+*.log
+*.out
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# ============================================================================
+# ANALYSIS AND CONFIGURATION FILES (OPTIONAL)
+# ============================================================================
+
+# You may want to keep these in git, but uncomment if you don't:
+# config.txt
+# parameters.ini
+# setup.cfg
+
+# Large data directories (uncomment if you have these)
+# data/
+# results/
+# output/
+
+# ============================================================================
+# CUSTOM PROJECT FILES
+# ============================================================================
+
+# Add any other project-specific files you want to ignore here
+# Example:
+# custom_analysis_*.txt
+# benchmark_results/

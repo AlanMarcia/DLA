@@ -11,20 +11,20 @@ const double MU0 = 4.0 * PI * 1e-7; // Permeability of free space (H/m)
 const double EPS0 = 1.0 / (MU0 * C0 * C0); // Permittivity of free space (F/m)
 
 // --- Laser Source Parameters (defining wavelengths first) ---
-const double lambda1 = 2e-6; // Wavelength of laser 1 (m) = 1500 nm
+const double lambda1 = 2e-6; 
 const double lambda2 = 2e-6; // Wavelength of laser 2 (m) = 1500 nm
-const double f1 = C0 / lambda1; // Frequency of laser 1 (Hz)
+const double f1 = C0 / lambda1; // 
 const double f2 = C0 / lambda2; // Frequency of laser 2 (Hz)
 const double intensity1 = 5.0e9; // Intensity of laser 1 (V/m) - Target: 5 GV/m
 const double intensity2 = 5.0e9; // Intensity of laser 2 (V/m) - Target: 5 GV/m
 
 // --- Simulation Parameters (in terms of wavelength) ---
-const double DX = lambda1 / 50.0; // Spatial step = λ₁/30 ≈ 0.05 μm (excellent resolution)
+const double DX = lambda1 / 100.0; 
 const double DT = DX / (C0 * sqrt(2.0)); // Time step (s) - Courant stability condition
 
 const int SIZE_X = (int)(6.0 * lambda1 / DX); // Grid size ≈ 6λ₁ in x direction (compact around structure)
 const int SIZE_Y = (int)(6.0 * lambda1 / DX); // Grid size ≈ 6λ₁ in y direction (compact around structure)  
-const int MAX_TIME = 1000; // Total simulation time steps (dimensionless)
+const int MAX_TIME = 5000; // Total simulation time steps (dimensionless)
 
 // --- Absorbing Boundary Conditions (PML) ---
 const int PML_WIDTH = 10; // PML layer thickness (grid points)
@@ -329,6 +329,8 @@ int main() {
 
     for (int t = 0; t < MAX_TIME; ++t) {
         sim.step();
+
+        // Save field data and print progress
         if (t % 50 == 0) {
             std::cout << "Time step: " << t << std::endl;
             sim.save_field_to_file("Ey_field_" + std::to_string(t) + ".dat");
