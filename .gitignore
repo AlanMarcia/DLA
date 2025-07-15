@@ -6,33 +6,22 @@
 # ============================================================================
 
 # Electric field data files
-Ey_field_*.dat
-Ex_field_*.dat
-Ez_field_*.dat
+*.dat
 
-# Magnetic field data files
-Hx_field_*.dat
-Hy_field_*.dat
-Hz_field_*.dat
 
 # Geometry and parameter files (generated)
-geometry_params.txt
+*.txt
 
 # Electron trajectory data (if any)
-electron_trajectory.txt
+
 
 # ============================================================================
 # VISUALIZATION OUTPUT FILES
 # ============================================================================
 
 # Generated plots and images
-field_plot_t*.png
-simulation_overview.png
-field_analysis.png
-synchronization_analysis.png
-
-# Animation files
-field_animation.gif
+*.png
+*.gif
 *.mp4
 *.avi
 
