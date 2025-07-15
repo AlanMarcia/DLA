@@ -2,9 +2,9 @@
 
 # Compiler and flags
 CXX = g++
-CXXFLAGS = -std=c++11 -O3 -Wall -Wextra -march=native
-DEBUG_FLAGS = -g -O0 -DDEBUG
-LDFLAGS = -lm
+CXXFLAGS = -std=c++11 -O3 -Wall -Wextra -march=native -fopenmp
+DEBUG_FLAGS = -g -O0 -DDEBUG -fopenmp
+LDFLAGS = -lm -fopenmp
 
 # Target executable
 TARGET = laser_simulation

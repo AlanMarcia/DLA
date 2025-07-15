@@ -3,6 +3,9 @@
 #include <cmath>
 #include <fstream>
 #include <string>
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 // --- Constants ---
 const double PI = 3.14159265358979323846;
@@ -18,57 +21,89 @@ const double f2 = C0 / lambda2; // Frequency of laser 2 (Hz)
 const double intensity1 = 5.0e9; // Intensity of laser 1 (V/m) - Target: 5 GV/m
 const double intensity2 = 5.0e9; // Intensity of laser 2 (V/m) - Target: 5 GV/m
 
-// --- Simulation Parameters (in terms of wavelength) ---
-const double DX = lambda1 / 100.0; 
+// --- Dielectric Bar Parameters ---
+// Relative permittivity of dielectric bars (SiO2)
+const double eps_r = 3.9; // Relative permittivity of the dielectric (dimensionless)
+
+// Bar geometry parameters (in SI units - meters)
+const double bar_width_m = 500e-9; // Bar thickness = 500 nm
+const double bar1_x_m = 5e-6; // Bar 1 center position = 5 μm
+const double bar2_x_m = 7e-6; // Bar 2 center position = 7 μm
+const double gap_between_bars_m = bar2_x_m - bar1_x_m; // Gap between bars = 2 μm
+
+// --- Simulation Parameters ---
+const double DX = 10e-9; // Grid spacing in meters (10 nm) - Finer resolution
 const double DT = DX / (C0 * sqrt(2.0)); // Time step (s) - Courant stability condition
 
-const int SIZE_X = (int)(6.0 * lambda1 / DX); // Grid size ≈ 6λ₁ in x direction (compact around structure)
-const int SIZE_Y = (int)(6.0 * lambda1 / DX); // Grid size ≈ 6λ₁ in y direction (compact around structure)  
-const int MAX_TIME = 5000; // Total simulation time steps (dimensionless)
+// Calculate grid size to fit structure with 1 μm margins
+const double margin_x = 1e-6; // 1 μm margin on each side
+const double tooth_height_m = 0.3 * lambda1; // Tooth height in meters (600 nm)
+const double structure_left = bar1_x_m - bar_width_m/2 - tooth_height_m; // Leftmost point
+const double structure_right = bar2_x_m + bar_width_m/2 + tooth_height_m; // Rightmost point
+const double total_domain_x = structure_right - structure_left + 2*margin_x; // Total domain width
+const int SIZE_X = (int)(total_domain_x / DX); // Grid size in x direction (~5.7 μm total)
+const int SIZE_Y = 1200; // Grid size in y direction (12 μm total with 10 nm resolution)  
+const int MAX_TIME = 1000; // Total simulation time steps (dimensionless)
+
+// Calculate new grid origin to center structure with margins
+const double grid_origin_x = structure_left - margin_x; // New x=0 position in physical space
+
+// Convert bar positions to grid points (relative to new origin)
+const int bar_width = (int)(bar_width_m / DX);
+const int bar1_x = (int)((bar1_x_m - grid_origin_x) / DX);
+const int bar2_x = (int)((bar2_x_m - grid_origin_x) / DX);
+const int gap_between_bars = bar2_x - bar1_x;
 
 // --- Absorbing Boundary Conditions (PML) ---
 const int PML_WIDTH = 10; // PML layer thickness (grid points)
 const double PML_SIGMA_MAX = 0.8 * (3.0 + 1.0) / (377.0 * DX); // Maximum conductivity
 
-// --- Dielectric Pillar Parameters (in terms of wavelength) ---
-// Relative permittivity of pillars of SiO2  
-const double eps_r = 3.9; // Relative permittivity of the dielectric (dimensionless)
-const int num_pillars_per_column = 5; // Number of pillars per column (dimensionless)
-const int pillar_radius = (int)(0.2 * lambda1 / DX); // Pillar radius = 0.2λ₁
-const int pillar_spacing_y = (int)(0.5 * lambda1 / DX); // Pillar spacing = 0.5λ₁
-const int column1_x = (int)(3.0 * lambda1 / DX); // Column 1 at x = 3.1λ₁ (centered in domain)
-const int column2_x = (int)(3.5 * lambda1 / DX); // Column 2 at x = 3.5λ₁ (centered in domain)
-const int first_pillar_y = (int)(1.5 * lambda1 / DX); // First pillar at y = 1.5λ₁
+// Teeth parameters (in terms of wavelength lambda1)
+const int num_teeth = 10; // Number of teeth per bar
+const int tooth_width = (int)(0.3 * lambda1 / DX); // Width of each tooth = 0.3λ₁
+const int tooth_height = (int)(0.3 * lambda1 / DX); // Height of teeth extending into gap = 0.4λ₁
+const int tooth_spacing = (int)(0.5 * lambda1 / DX); // Spacing between teeth centers = 0.5λ₁
+const int first_tooth_y = (int)(1.5e-6 / DX); // Position of first tooth = 2 μm (SI units)
 
-// --- Source Positions (in terms of wavelength) ---
-// Laser sources at the left boundary for x-direction propagation
-const int source1_x = PML_WIDTH + 5; // Laser 1 near left boundary (after PML)
-const int source1_y = (int)(2.5 * lambda1 / DX); // Laser 1 at y = 2.5λ₁ (centered on pillar array)
-const int source2_x = PML_WIDTH + 5; // Laser 2 near left boundary (after PML)  
-const int source2_y = (int)(3.5 * lambda1 / DX); // Laser 2 at y = 3.5λ₁ (offset from laser 1)
+// Bar length (extends in y-direction) - in SI units
+const double bar_start_y_m = 2e-6; // Start at 1 μm
+const double bar_end_y_m = 12e-6; // End at 11 μm
+const int bar_start_y = (int)(bar_start_y_m / DX); // Convert to grid points
+const int bar_end_y = (int)(bar_end_y_m / DX); // Convert to grid points
 
-// --- Inter-pillar Source Parameters ---
-const double inter_pillar_intensity = 2.0e9; // 2 GV/m intensity for inter-pillar sources
+// --- Source Positions ---
+// External laser sources positioned outside the structure (in SI units)
+const double left_source_x_m = 4.5e-6; // Left sources near left boundary
+const double right_source_x_m = 7.5e-6; // Right sources near right boundary
 
-// Inter-pillar source positions in column 1 (exactly between pillars)
-const int inter_source1_1_x = column1_x; // Centered on pillar column
-const int inter_source1_1_y = first_pillar_y + (int)(0.5 * pillar_spacing_y); // Exactly between pillars 1 and 2
-const int inter_source1_2_x = column1_x;
-const int inter_source1_2_y = first_pillar_y + (int)(1.5 * pillar_spacing_y); // Exactly between pillars 2 and 3
-const int inter_source1_3_x = column1_x;
-const int inter_source1_3_y = first_pillar_y + (int)(2.5 * pillar_spacing_y); // Exactly between pillars 3 and 4
-const int inter_source1_4_x = column1_x;
-const int inter_source1_4_y = first_pillar_y + (int)(3.5 * pillar_spacing_y); // Exactly between pillars 4 and 5
+// Laser intensity for external sources
+const double external_source_intensity = 2.0e9; // 2 GV/m intensity for external sources
 
-// Inter-pillar source positions in column 2 (exactly between pillars)
-const int inter_source2_1_x = column2_x; // Centered on pillar column
-const int inter_source2_1_y = first_pillar_y + (int)(0.5 * pillar_spacing_y); // Exactly between pillars 1 and 2
-const int inter_source2_2_x = column2_x;
-const int inter_source2_2_y = first_pillar_y + (int)(1.5 * pillar_spacing_y); // Exactly between pillars 2 and 3
-const int inter_source2_3_x = column2_x;
-const int inter_source2_3_y = first_pillar_y + (int)(2.5 * pillar_spacing_y); // Exactly between pillars 3 and 4
-const int inter_source2_4_x = column2_x;
-const int inter_source2_4_y = first_pillar_y + (int)(3.5 * pillar_spacing_y); // Exactly between pillars 4 and 5
+// Left side sources (positioned in the middle of spaces between teeth) - adjusted to new grid
+const int left_source_x = (int)((left_source_x_m - grid_origin_x) / DX);
+const int left_source1_y = first_tooth_y + (int)(0.5 * tooth_spacing); // Between teeth 1 and 2
+const int left_source2_y = first_tooth_y + (int)(1.5 * tooth_spacing); // Between teeth 2 and 3
+const int left_source3_y = first_tooth_y + (int)(2.5 * tooth_spacing); // Between teeth 3 and 4
+const int left_source4_y = first_tooth_y + (int)(3.5 * tooth_spacing); // Between teeth 4 and 5
+const int left_source5_y = first_tooth_y + (int)(4.5 * tooth_spacing); // Between teeth 5 and 6
+const int left_source6_y = first_tooth_y + (int)(5.5 * tooth_spacing); // Between teeth 6 and 7
+const int left_source7_y = first_tooth_y + (int)(6.5 * tooth_spacing); // Between teeth 7 and 8
+const int left_source8_y = first_tooth_y + (int)(7.5 * tooth_spacing); // Between teeth 8 and 9
+const int left_source9_y = first_tooth_y + (int)(8.5 * tooth_spacing); // Between teeth 9 and 10
+const int left_source10_y = first_tooth_y + (int)(9.5 * tooth_spacing); // Between teeth 10 and 11
+
+// Right side sources (positioned in the middle of spaces between teeth) - adjusted to new grid
+const int right_source_x = (int)((right_source_x_m - grid_origin_x) / DX);
+const int right_source1_y = first_tooth_y + (int)(0.5 * tooth_spacing); // Between teeth 1 and 2
+const int right_source2_y = first_tooth_y + (int)(1.5 * tooth_spacing); // Between teeth 2 and 3
+const int right_source3_y = first_tooth_y + (int)(2.5 * tooth_spacing); // Between teeth 3 and 4
+const int right_source4_y = first_tooth_y + (int)(3.5 * tooth_spacing); // Between teeth 4 and 5
+const int right_source5_y = first_tooth_y + (int)(4.5 * tooth_spacing); // Between teeth 5 and 6
+const int right_source6_y = first_tooth_y + (int)(5.5 * tooth_spacing); // Between teeth 6 and 7
+const int right_source7_y = first_tooth_y + (int)(6.5 * tooth_spacing); // Between teeth 7 and 8
+const int right_source8_y = first_tooth_y + (int)(7.5 * tooth_spacing); // Between teeth 8 and 9
+const int right_source9_y = first_tooth_y + (int)(8.5 * tooth_spacing); // Between teeth 9 and 10
+const int right_source10_y = first_tooth_y + (int)(9.5 * tooth_spacing); // Between teeth 10 and 11
 
 // --- Main FDTD Class ---
 class FDTDSimulator {
@@ -77,6 +112,7 @@ public:
         Ey(SIZE_X, std::vector<double>(SIZE_Y, 0.0)),
         Hx(SIZE_X, std::vector<double>(SIZE_Y, 0.0)),
         Hz(SIZE_X, std::vector<double>(SIZE_Y, 0.0)),
+        potential(SIZE_X, std::vector<double>(SIZE_Y, 0.0)),
         eps(SIZE_X, std::vector<double>(SIZE_Y, EPS0)),
         sigma_x(SIZE_X, std::vector<double>(SIZE_Y, 0.0)),
         sigma_y(SIZE_X, std::vector<double>(SIZE_Y, 0.0)),
@@ -85,29 +121,42 @@ public:
         // Initialize PML absorbing boundaries
         initialize_pml();
         
-        // Initialize the dielectric pillars
-        // We iterate through every grid point and check if it falls within any of the pillars.
+        // Initialize the dielectric bars with teeth
+        #pragma omp parallel for collapse(2)
         for (int i = 0; i < SIZE_X; ++i) {
             for (int j = 0; j < SIZE_Y; ++j) {
-                bool in_pillar = false;
-                // Check against all pillars in both columns
-                for (int p = 0; p < num_pillars_per_column; ++p) {
-                    int pillar_center_y = first_pillar_y + p * pillar_spacing_y;
+                bool in_dielectric = false;
+                
+                // Check if point is in Bar 1 (left bar)
+                if (i >= (bar1_x - bar_width/2) && i <= (bar1_x + bar_width/2) &&
+                    j >= bar_start_y && j <= bar_end_y) {
+                    in_dielectric = true;
+                }
+                
+                // Check if point is in Bar 2 (right bar)
+                if (i >= (bar2_x - bar_width/2) && i <= (bar2_x + bar_width/2) &&
+                    j >= bar_start_y && j <= bar_end_y) {
+                    in_dielectric = true;
+                }
+                
+                // Add teeth extending from Bar 1 towards the gap
+                for (int t = 0; t < num_teeth; ++t) {
+                    int tooth_center_y = first_tooth_y + t * tooth_spacing;
                     
-                    // Check if the point (i, j) is inside a pillar in the first column
-                    if (sqrt(pow(i - column1_x, 2) + pow(j - pillar_center_y, 2)) < pillar_radius) {
-                        in_pillar = true;
-                        break; // Point is in a pillar, no need to check others
+                    // Tooth extending from Bar 1 (towards right)
+                    if (i >= (bar1_x + bar_width/2) && i <= (bar1_x + bar_width/2 + tooth_height) &&
+                        j >= (tooth_center_y - tooth_width/2) && j <= (tooth_center_y + tooth_width/2)) {
+                        in_dielectric = true;
                     }
                     
-                    // Check if the point (i, j) is inside a pillar in the second column
-                    if (sqrt(pow(i - column2_x, 2) + pow(j - pillar_center_y, 2)) < pillar_radius) {
-                        in_pillar = true;
-                        break; // Point is in a pillar, no need to check others
+                    // Tooth extending from Bar 2 (towards left)
+                    if (i >= (bar2_x - bar_width/2 - tooth_height) && i <= (bar2_x - bar_width/2) &&
+                        j >= (tooth_center_y - tooth_width/2) && j <= (tooth_center_y + tooth_width/2)) {
+                        in_dielectric = true;
                     }
                 }
                 
-                if (in_pillar) {
+                if (in_dielectric) {
                     eps[i][j] = eps_r * EPS0;
                 }
             }
@@ -118,6 +167,7 @@ public:
         update_H();
         update_E();
         apply_sources();
+        //calculate_potential();
         time++;
     }
 
@@ -132,10 +182,22 @@ public:
         file.close();
     }
 
+    void save_potential_to_file(const std::string& filename) {
+        std::ofstream file(filename);
+        for (int i = 0; i < SIZE_X; ++i) {
+            for (int j = 0; j < SIZE_Y; ++j) {
+                file << potential[i][j] << " ";
+            }
+            file << "\n";
+        }
+        file.close();
+    }
+
     void save_geometry_params(const std::string& filename) {
         std::ofstream file(filename);
         
         // Save wavelength-based parameters (fundamental design parameters)
+
         file << "lambda1 " << lambda1 << "\n"; // Wavelength 1 in meters
         file << "lambda2 " << lambda2 << "\n"; // Wavelength 2 in meters
         file << "lambda1_nm " << lambda1 * 1e9 << "\n"; // Wavelength 1 in nm
@@ -145,16 +207,28 @@ public:
         file << "SIZE_X " << SIZE_X << "\n";
         file << "SIZE_Y " << SIZE_Y << "\n";
         file << "DX " << DX << "\n";
-        file << "DX_um " << DX * 1e6 << "\n"; // Grid spacing in micrometers
+        file << "DX_nm " << DX * 1e9 << "\n"; // Grid spacing in nanometers
         file << "DX_over_lambda1 " << DX / lambda1 << "\n"; // Grid spacing / λ₁
         file << "points_per_lambda1 " << lambda1 / DX << "\n"; // Points per λ₁
         file << "points_per_lambda2 " << lambda2 / DX << "\n"; // Points per λ₂
         
-        // Physical domain size (in multiple units)
+        // Physical domain size
         file << "domain_x_um " << SIZE_X * DX * 1e6 << "\n"; // Domain size in μm
         file << "domain_y_um " << SIZE_Y * DX * 1e6 << "\n"; // Domain size in μm
         file << "domain_x_lambda1 " << SIZE_X * DX / lambda1 << "\n"; // Domain size in λ₁
         file << "domain_y_lambda1 " << SIZE_Y * DX / lambda1 << "\n"; // Domain size in λ₁
+        
+        // Grid origin and margins (new compact grid with 1 μm margins)
+        file << "grid_origin_x_m " << grid_origin_x << "\n"; // Grid origin x in meters
+        file << "grid_origin_x_um " << grid_origin_x * 1e6 << "\n"; // Grid origin x in μm
+        file << "margin_x_m " << margin_x << "\n"; // X-direction margin in meters
+        file << "margin_x_um " << margin_x * 1e6 << "\n"; // X-direction margin in μm
+        file << "structure_left_m " << structure_left << "\n"; // Structure left edge in meters
+        file << "structure_left_um " << structure_left * 1e6 << "\n"; // Structure left edge in μm
+        file << "structure_right_m " << structure_right << "\n"; // Structure right edge in meters
+        file << "structure_right_um " << structure_right * 1e6 << "\n"; // Structure right edge in μm
+        file << "total_domain_x_m " << total_domain_x << "\n"; // Total domain width in meters
+        file << "total_domain_x_um " << total_domain_x * 1e6 << "\n"; // Total domain width in μm
         
         // Time parameters
         file << "DT " << DT << "\n"; // Time step in seconds
@@ -168,44 +242,73 @@ public:
         // Save laser parameters
         file << "f1 " << f1 << "\n"; // Frequency in Hz
         file << "f2 " << f2 << "\n"; // Frequency in Hz
-        file << "inter_pillar_intensity " << inter_pillar_intensity << "\n"; // Inter-pillar source intensity in V/m
-        file << "inter_pillar_intensity_GVm " << inter_pillar_intensity * 1e-9 << "\n"; // Inter-pillar intensity in GV/m
-        file << "total_sources " << 8 << "\n"; // Total number of laser sources (8 inter-pillar only)
+        file << "external_source_intensity " << external_source_intensity << "\n"; // External source intensity in V/m
+        file << "external_source_intensity_GVm " << external_source_intensity * 1e-9 << "\n"; // External intensity in GV/m
+        file << "total_sources " << 10 << "\n"; // Total number of laser sources (5 left + 5 right external sources)
         
         // Save dielectric parameters
         file << "eps_r " << eps_r << "\n"; // Relative permittivity (dimensionless)
-        file << "num_pillars_per_column " << num_pillars_per_column << "\n";
+        file << "num_teeth " << num_teeth << "\n"; // Number of teeth per bar
         
-        // Pillar dimensions (grid points, μm, and λ₁)
-        file << "pillar_radius " << pillar_radius << "\n"; // Grid points
-        file << "pillar_radius_um " << pillar_radius * DX * 1e6 << "\n"; // Radius in μm
-        file << "pillar_radius_lambda1 " << pillar_radius * DX / lambda1 << "\n"; // Radius in λ₁
-        file << "pillar_spacing_y " << pillar_spacing_y << "\n"; // Grid points
-        file << "pillar_spacing_y_um " << pillar_spacing_y * DX * 1e6 << "\n"; // Spacing in μm
-        file << "pillar_spacing_y_lambda1 " << pillar_spacing_y * DX / lambda1 << "\n"; // Spacing in λ₁
+        // Bar dimensions (SI units and grid points)
+        file << "bar_width_m " << bar_width_m << "\n"; // Bar width in meters
+        file << "bar_width_nm " << bar_width_m * 1e9 << "\n"; // Bar width in nanometers
+        file << "bar_width " << bar_width << "\n"; // Bar width in grid points
+        file << "bar1_x_m " << bar1_x_m << "\n"; // Bar 1 position in meters
+        file << "bar1_x_um " << bar1_x_m * 1e6 << "\n"; // Bar 1 position in micrometers
+        file << "bar1_x " << bar1_x << "\n"; // Bar 1 position in grid points
+        file << "bar2_x_m " << bar2_x_m << "\n"; // Bar 2 position in meters
+        file << "bar2_x_um " << bar2_x_m * 1e6 << "\n"; // Bar 2 position in micrometers
+        file << "bar2_x " << bar2_x << "\n"; // Bar 2 position in grid points
+        file << "gap_between_bars_m " << gap_between_bars_m << "\n"; // Gap in meters
+        file << "gap_between_bars_um " << gap_between_bars_m * 1e6 << "\n"; // Gap in micrometers
+        file << "gap_between_bars " << gap_between_bars << "\n"; // Gap in grid points
         
-        // Column positions (grid points, μm, and λ₁)
-        file << "column1_x " << column1_x << "\n"; // Grid position
-        file << "column2_x " << column2_x << "\n"; // Grid position
-        file << "column1_x_um " << column1_x * DX * 1e6 << "\n"; // Position in μm
-        file << "column2_x_um " << column2_x * DX * 1e6 << "\n"; // Position in μm
-        file << "column1_x_lambda1 " << column1_x * DX / lambda1 << "\n"; // Position in λ₁
-        file << "column2_x_lambda1 " << column2_x * DX / lambda1 << "\n"; // Position in λ₁
-        file << "column_separation_um " << (column2_x - column1_x) * DX * 1e6 << "\n"; // Separation in μm
-        file << "column_separation_lambda1 " << (column2_x - column1_x) * DX / lambda1 << "\n"; // Separation in λ₁
+        // Bar length (SI units and grid points)
+        file << "bar_start_y_m " << bar_start_y_m << "\n"; // Bar start in meters
+        file << "bar_start_y_um " << bar_start_y_m * 1e6 << "\n"; // Bar start in micrometers
+        file << "bar_start_y " << bar_start_y << "\n"; // Bar start in grid points
+        file << "bar_end_y_m " << bar_end_y_m << "\n"; // Bar end in meters
+        file << "bar_end_y_um " << bar_end_y_m * 1e6 << "\n"; // Bar end in micrometers
+        file << "bar_end_y " << bar_end_y << "\n"; // Bar end in grid points
         
-        // First pillar position (grid points, μm, and λ₁)
-        file << "first_pillar_y " << first_pillar_y << "\n"; // Grid position
-        file << "first_pillar_y_um " << first_pillar_y * DX * 1e6 << "\n"; // Position in μm
-        file << "first_pillar_y_lambda1 " << first_pillar_y * DX / lambda1 << "\n"; // Position in λ₁
+        // Tooth dimensions (wavelength-based, grid points, and SI units)
+        file << "tooth_width_lambda1 " << tooth_width * DX / lambda1 << "\n"; // Width in λ₁
+        file << "tooth_width " << tooth_width << "\n"; // Width in grid points
+        file << "tooth_width_nm " << tooth_width * DX * 1e9 << "\n"; // Width in nanometers
+        file << "tooth_height_lambda1 " << tooth_height * DX / lambda1 << "\n"; // Height in λ₁
+        file << "tooth_height " << tooth_height << "\n"; // Height in grid points
+        file << "tooth_height_nm " << tooth_height * DX * 1e9 << "\n"; // Height in nanometers
+        file << "tooth_spacing_lambda1 " << tooth_spacing * DX / lambda1 << "\n"; // Spacing in λ₁
+        file << "tooth_spacing " << tooth_spacing << "\n"; // Spacing in grid points
+        file << "tooth_spacing_nm " << tooth_spacing * DX * 1e9 << "\n"; // Spacing in nanometers
+        
+        // First tooth position (SI units and grid points)
+        file << "first_tooth_y_m " << first_tooth_y * DX << "\n"; // Position in meters
+        file << "first_tooth_y_um " << first_tooth_y * DX * 1e6 << "\n"; // Position in micrometers
+        file << "first_tooth_y " << first_tooth_y << "\n"; // Position in grid points
+        
+        // External source positions (SI units and grid points)
+        file << "left_source_x_m " << left_source_x_m << "\n"; // Left source x in meters
+        file << "left_source_x_nm " << left_source_x_m * 1e9 << "\n"; // Left source x in nanometers
+        file << "left_source_x " << left_source_x << "\n"; // Left source x in grid points
+        file << "right_source_x_m " << right_source_x_m << "\n"; // Right source x in meters
+        file << "right_source_x_um " << right_source_x_m * 1e6 << "\n"; // Right source x in micrometers
+        file << "right_source_x " << right_source_x << "\n"; // Right source x in grid points
+        
+        // External source y-positions (between teeth)
+        file << "left_source1_y " << left_source1_y << "\n"; // Left source 1 y in grid points
+        file << "left_source1_y_um " << left_source1_y * DX * 1e6 << "\n"; // Left source 1 y in micrometers
+        file << "right_source1_y " << right_source1_y << "\n"; // Right source 1 y in grid points
+        file << "right_source1_y_um " << right_source1_y * DX * 1e6 << "\n"; // Right source 1 y in micrometers
         
         // Design ratios and scaling factors
-        file << "pillar_diameter_over_spacing " << (2.0 * pillar_radius) / (double)pillar_spacing_y << "\n"; // Fill factor
+        file << "tooth_fill_factor " << (double)tooth_width / (double)tooth_spacing << "\n"; // Tooth fill factor
         file << "domain_aspect_ratio " << (double)SIZE_X / (double)SIZE_Y << "\n"; // Domain aspect ratio
         
         // PML Absorbing Boundary Conditions
         file << "PML_WIDTH " << PML_WIDTH << "\n"; // PML layer thickness (grid points)
-        file << "PML_WIDTH_um " << PML_WIDTH * DX * 1e6 << "\n"; // PML thickness in μm
+        file << "PML_WIDTH_nm " << PML_WIDTH * DX * 1e9 << "\n"; // PML thickness in nanometers
         file << "PML_WIDTH_lambda1 " << PML_WIDTH * DX / lambda1 << "\n"; // PML thickness in λ₁
         file << "PML_SIGMA_MAX " << PML_SIGMA_MAX << "\n"; // Maximum PML conductivity
         
@@ -214,6 +317,13 @@ public:
         file << "MU0 " << MU0 << "\n"; // Permeability of free space (H/m)
         file << "EPS0 " << EPS0 << "\n"; // Permittivity of free space (F/m)
         
+        // Potential calculation parameters
+        file << "potential_calculation " << "enabled" << "\n"; // Potential calculation status
+        file << "potential_reference " << "boundary_zero" << "\n"; // Potential reference point
+        file << "potential_method " << "field_integration_with_correction" << "\n"; // Calculation method
+        file << "potential_solver " << "direct_integration" << "\n"; // Numerical solver
+        file << "potential_smoothing " << "local_averaging" << "\n"; // Smoothing method
+        
         file.close();
     }
 
@@ -221,6 +331,7 @@ private:
     std::vector<std::vector<double>> Ey;
     std::vector<std::vector<double>> Hx;
     std::vector<std::vector<double>> Hz;
+    std::vector<std::vector<double>> potential; // Electric potential (V)
     std::vector<std::vector<double>> eps;
     std::vector<std::vector<double>> sigma_x; // PML conductivity in x direction
     std::vector<std::vector<double>> sigma_y; // PML conductivity in y direction
@@ -228,6 +339,7 @@ private:
 
     void initialize_pml() {
         // Initialize PML conductivity arrays
+        #pragma omp parallel for collapse(2)
         for (int i = 0; i < SIZE_X; ++i) {
             for (int j = 0; j < SIZE_Y; ++j) {
                 double sigma_x_val = 0.0;
@@ -263,6 +375,7 @@ private:
 
     void update_H() {
         // Update Hx with PML absorption (curl of Ey in z-direction)
+        #pragma omp parallel for collapse(2)
         for (int i = 0; i < SIZE_X - 1; ++i) {
             for (int j = 0; j < SIZE_Y; ++j) {
                 double curl_E = -(Ey[i+1][j] - Ey[i][j]);
@@ -276,6 +389,7 @@ private:
         }
         
         // Update Hz with PML absorption (curl of Ey in x-direction)
+        #pragma omp parallel for collapse(2)
         for (int i = 0; i < SIZE_X; ++i) {
             for (int j = 0; j < SIZE_Y - 1; ++j) {
                 double curl_E = (Ey[i][j+1] - Ey[i][j]);
@@ -290,6 +404,7 @@ private:
     }
 
     void update_E() {
+        #pragma omp parallel for collapse(2)
         for (int i = 1; i < SIZE_X - 1; ++i) {
             for (int j = 1; j < SIZE_Y - 1; ++j) {
                 // Standard FDTD update for Ey field with PML absorption
@@ -305,22 +420,148 @@ private:
     }
 
     void apply_sources() {
-        // Inter-pillar sources in column 1 (2 GV/m each, frequency f1)
-        Ey[inter_source1_1_x][inter_source1_1_y] += sin(2.0 * PI * f1 * time * DT) * inter_pillar_intensity;
-        Ey[inter_source1_2_x][inter_source1_2_y] += sin(2.0 * PI * f1 * time * DT) * inter_pillar_intensity;
-        Ey[inter_source1_3_x][inter_source1_3_y] += sin(2.0 * PI * f1 * time * DT) * inter_pillar_intensity;
-        Ey[inter_source1_4_x][inter_source1_4_y] += sin(2.0 * PI * f1 * time * DT) * inter_pillar_intensity;
+        // Left side external sources (5 sources between teeth, frequency f1)
+        Ey[left_source_x][left_source1_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[left_source_x][left_source2_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[left_source_x][left_source3_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[left_source_x][left_source4_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[left_source_x][left_source5_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[left_source_x][left_source6_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[left_source_x][left_source7_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[left_source_x][left_source8_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[left_source_x][left_source9_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[left_source_x][left_source10_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+
         
-        // Inter-pillar sources in column 2 (2 GV/m each, frequency f2)
-        Ey[inter_source2_1_x][inter_source2_1_y] += sin(2.0 * PI * f2 * time * DT) * inter_pillar_intensity;
-        Ey[inter_source2_2_x][inter_source2_2_y] += sin(2.0 * PI * f2 * time * DT) * inter_pillar_intensity;
-        Ey[inter_source2_3_x][inter_source2_3_y] += sin(2.0 * PI * f2 * time * DT) * inter_pillar_intensity;
-        Ey[inter_source2_4_x][inter_source2_4_y] += sin(2.0 * PI * f2 * time * DT) * inter_pillar_intensity;
+        // Right side external sources (5 sources between teeth, frequency f1)
+        Ey[right_source_x][right_source1_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[right_source_x][right_source2_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[right_source_x][right_source3_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[right_source_x][right_source4_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[right_source_x][right_source5_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[right_source_x][right_source6_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[right_source_x][right_source7_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[right_source_x][right_source8_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[right_source_x][right_source9_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        Ey[right_source_x][right_source10_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
     }
+
+    // void calculate_potential() {
+    //     // For electromagnetic waves, the scalar potential is not the primary quantity
+    //     // Instead, we calculate a quasi-static potential from the instantaneous field
+    //     // This gives a meaningful visualization of the potential landscape
+        
+    //     // Method 1: Direct integration of the electric field
+    //     // V(x,y) = -∫ E⃗ · dl⃗ from reference point to (x,y)
+    //     // Since we only have Ey, we integrate along field lines
+        
+    //     // Initialize potential with zero at left boundary
+    //     #pragma omp parallel for
+    //     for (int j = 0; j < SIZE_Y; ++j) {
+    //         potential[0][j] = 0.0; // Reference potential at left boundary
+    //     }
+        
+    //     // Integrate Ey field from left to right (this gives potential due to y-direction field)
+    //     for (int i = 1; i < SIZE_X; ++i) {
+    //         #pragma omp parallel for
+    //         for (int j = 0; j < SIZE_Y; ++j) {
+    //             // Simple integration: V(i) = V(i-1) - Ey * dy_effective
+    //             // Since Ey creates potential differences in y-direction, we integrate along y
+                
+    //             // For visualization purposes, we create a smoothed potential based on local field
+    //             double local_field_contribution = 0.0;
+    //             int count = 0;
+                
+    //             // Average field in local neighborhood for smoother potential
+    //             for (int di = -2; di <= 2; ++di) {
+    //                 for (int dj = -2; dj <= 2; ++dj) {
+    //                     int ni = i + di;
+    //                     int nj = j + dj;
+    //                     if (ni >= 0 && ni < SIZE_X && nj >= 0 && nj < SIZE_Y) {
+    //                         local_field_contribution += Ey[ni][nj];
+    //                         count++;
+    //                     }
+    //                 }
+    //             }
+                
+    //             if (count > 0) {
+    //                 local_field_contribution /= count;
+    //             }
+                
+    //             // Integrate the field to get potential
+    //             potential[i][j] = potential[i-1][j] - local_field_contribution * DX;
+    //         }
+    //     }
+        
+    //     // Method 2: Add contribution from field gradients (Poisson-like correction)
+    //     // This helps capture potential variations due to charge concentrations
+    //     std::vector<std::vector<double>> potential_correction(SIZE_X, std::vector<double>(SIZE_Y, 0.0));
+        
+    //     // Calculate correction based on field divergence (quasi-static approximation)
+    //     #pragma omp parallel for collapse(2)
+    //     for (int i = 1; i < SIZE_X - 1; ++i) {
+    //         for (int j = 1; j < SIZE_Y - 1; ++j) {
+    //             // Calculate field divergence ∇·E (indicates charge density)
+    //             double dEy_dy = (Ey[i][j+1] - Ey[i][j-1]) / (2.0 * DX);
+                
+    //             // For TM mode (only Ey), we approximate Ex from wave equation
+    //             // ∂Ex/∂t ≈ -c²∂Hy/∂z ≈ c²∂Ey/∂y (rough approximation)
+    //             double Ex_approx = dEy_dy * 0.1; // Small coupling factor
+    //             double dEx_dx = (i > 1 && i < SIZE_X - 2) ? 
+    //                 ((Ey[i+1][j+1] - Ey[i+1][j-1]) - (Ey[i-1][j+1] - Ey[i-1][j-1])) / (4.0 * DX) * 0.1 : 0.0;
+                
+    //             // Divergence of E field
+    //             double div_E = dEx_dx + dEy_dy;
+                
+    //             // Correction potential (small contribution)
+    //             potential_correction[i][j] = -div_E * DX * DX * 0.01; // Small factor for stability
+    //         }
+    //     }
+        
+    //     // Apply correction with smoothing
+    //     #pragma omp parallel for collapse(2)
+    //     for (int i = 1; i < SIZE_X - 1; ++i) {
+    //         for (int j = 1; j < SIZE_Y - 1; ++j) {
+    //             potential[i][j] += potential_correction[i][j];
+    //         }
+    //     }
+        
+    //     // Smooth the potential to reduce numerical noise
+    //     std::vector<std::vector<double>> potential_smooth = potential;
+    //     #pragma omp parallel for collapse(2)
+    //     for (int i = 1; i < SIZE_X - 1; ++i) {
+    //         for (int j = 1; j < SIZE_Y - 1; ++j) {
+    //             potential_smooth[i][j] = 0.6 * potential[i][j] + 
+    //                                    0.1 * (potential[i-1][j] + potential[i+1][j] + 
+    //                                           potential[i][j-1] + potential[i][j+1]);
+    //         }
+    //     }
+        
+    //     // Apply smoothed result
+    //     potential = potential_smooth;
+        
+    //     // Ensure boundary conditions (grounded boundaries)
+    //     #pragma omp parallel for
+    //     for (int i = 0; i < SIZE_X; ++i) {
+    //         potential[i][0] = 0.0;           // Bottom boundary
+    //         potential[i][SIZE_Y-1] = 0.0;    // Top boundary
+    //     }
+    //     #pragma omp parallel for
+    //     for (int j = 0; j < SIZE_Y; ++j) {
+    //         potential[0][j] = 0.0;           // Left boundary
+    //         potential[SIZE_X-1][j] = 0.0;    // Right boundary
+    //     }
+   // }
 };
 
 
 int main() {
+    #ifdef _OPENMP
+    std::cout << "OpenMP is enabled with " << omp_get_max_threads() << " threads" << std::endl;
+    #else
+    std::cout << "OpenMP is not available - running in serial mode" << std::endl;
+    #endif
+    
     FDTDSimulator sim;
 
     // Save geometry parameters at the beginning
@@ -334,6 +575,12 @@ int main() {
         if (t % 50 == 0) {
             std::cout << "Time step: " << t << std::endl;
             sim.save_field_to_file("Ey_field_" + std::to_string(t) + ".dat");
+            sim.save_potential_to_file("potential_" + std::to_string(t) + ".dat");
+            
+            // Print potential statistics for monitoring
+            if (t > 0) {
+                std::cout << "  Field and potential data saved." << std::endl;
+            }
         }
     }
 

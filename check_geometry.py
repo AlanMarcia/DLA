@@ -1,52 +1,181 @@
 #!/usr/bin/env python3
 """
-Geometry Preview for FDTD Laser Simulation
+Geometry Check for Bar and Teeth Structure
 
-This script shows the pillar geometry and source positions without running the simulation.
-Use this to verify that all sources are positioned correctly between the pillars.
+This script helps visualize the new dielectric bar and teeth geometry
+to verify the structure is correct before running the simulation.
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
+from matplotlib.patches import Rectangle
+import matplotlib.patches as patches
 
-def plot_geometry_preview():
-    """Plot the geometry setup showing pillars and inter-pillar sources."""
+def visualize_bar_geometry():
+    """Create a visualization of the bar and teeth geometry."""
     
-    # Parameters from your C++ code
-    lambda1 = 1.5e-6  # m
-    DX = lambda1 / 50.0  # Spatial step
+    # Parameters from C++ code (approximate values)
+    lambda1 = 2e-6  # wavelength
+    DX = lambda1 / 50.0  # grid spacing
     
+    # Convert to grid units
     SIZE_X = int(6.0 * lambda1 / DX)
     SIZE_Y = int(6.0 * lambda1 / DX)
-    
-    # Pillar parameters
-    num_pillars_per_column = 5
-    pillar_radius = int(0.2 * lambda1 / DX)
-    pillar_spacing_y = int(0.5 * lambda1 / DX)
-    column1_x = int(3.0 * lambda1 / DX)
-    column2_x = int(3.5 * lambda1 / DX)
-    first_pillar_y = int(1.5 * lambda1 / DX)
-    
-    # PML parameters
     PML_WIDTH = 10
     
+    # Bar parameters
+    bar_width = int(0.15 * lambda1 / DX)
+    bar1_x = int(2.8 * lambda1 / DX)
+    bar2_x = int(3.7 * lambda1 / DX)
+    
+    # Teeth parameters
+    num_teeth = 6
+    tooth_width = int(0.3 * lambda1 / DX)
+    tooth_height = int(0.4 * lambda1 / DX)
+    tooth_spacing = int(0.5 * lambda1 / DX)
+    first_tooth_y = int(1.5 * lambda1 / DX)
+    
+    # Bar length
+    bar_start_y = PML_WIDTH + 10
+    bar_end_y = SIZE_Y - PML_WIDTH - 10
+    
+    # Source positions
+    gap_center_x = (bar1_x + bar2_x) // 2
+    
+    print("FDTD Laser Simulation - Bar and Teeth Geometry Check")
+    print("=" * 55)
     print(f"Grid size: {SIZE_X} x {SIZE_Y}")
-    print(f"Pillar radius: {pillar_radius} grid points")
-    print(f"Pillar spacing: {pillar_spacing_y} grid points")
-    print(f"Column 1 at x = {column1_x}")
-    print(f"Column 2 at x = {column2_x}")
-    print(f"First pillar at y = {first_pillar_y}")
+    print(f"Bar width: {bar_width} grid points")
+    print(f"Bar 1 center at x = {bar1_x}")
+    print(f"Bar 2 center at x = {bar2_x}")
+    print(f"Gap width: {bar2_x - bar1_x} grid points")
+    print(f"Number of teeth per bar: {num_teeth}")
+    print(f"Tooth dimensions: {tooth_height} x {tooth_width} grid points")
+    print(f"Tooth spacing: {tooth_spacing} grid points")
     
-    # Calculate source positions (exactly between pillars)
-    sources_col1 = []
-    sources_col2 = []
+    # Calculate source positions (between teeth in gap)
+    sources = []
+    print(f"\nInter-teeth Source Positions:")
+    print("=" * 35)
     
-    for i in range(4):  # 4 gaps between 5 pillars
-        # Column 1 sources
-        x1 = column1_x
-        y1 = first_pillar_y + int((i + 0.5) * pillar_spacing_y)
-        sources_col1.append((x1, y1))
+    for i in range(5):  # 5 sources between 6 teeth
+        x = gap_center_x
+        y = first_tooth_y + int((i + 0.5) * tooth_spacing)
+        sources.append((x, y))
+        print(f"Source {i+1}: x={x}, y={y} (gap center, between teeth {i+1} and {i+2})")
+    
+    # Create figure
+    fig, ax = plt.subplots(figsize=(12, 10))
+    
+    # Draw PML boundaries
+    pml_color = 'lightgray'
+    ax.axvline(x=PML_WIDTH, color=pml_color, linestyle='--', alpha=0.7, label='PML Boundary')
+    ax.axvline(x=SIZE_X-PML_WIDTH, color=pml_color, linestyle='--', alpha=0.7)
+    ax.axhline(y=PML_WIDTH, color=pml_color, linestyle='--', alpha=0.7)
+    ax.axhline(y=SIZE_Y-PML_WIDTH, color=pml_color, linestyle='--', alpha=0.7)
+    
+    # Draw Bar 1 (left bar)
+    bar1_rect = Rectangle((bar1_x - bar_width//2, bar_start_y), 
+                         bar_width, bar_end_y - bar_start_y,
+                         facecolor='lightblue', edgecolor='blue', 
+                         alpha=0.7, label='Dielectric Bars')
+    ax.add_patch(bar1_rect)
+    
+    # Draw Bar 2 (right bar)
+    bar2_rect = Rectangle((bar2_x - bar_width//2, bar_start_y), 
+                         bar_width, bar_end_y - bar_start_y,
+                         facecolor='lightblue', edgecolor='blue', alpha=0.7)
+    ax.add_patch(bar2_rect)
+    
+    # Draw teeth extending from both bars
+    for t in range(num_teeth):
+        tooth_center_y = first_tooth_y + t * tooth_spacing
+        
+        # Tooth from Bar 1 (extending right)
+        tooth1_rect = Rectangle((bar1_x + bar_width//2, tooth_center_y - tooth_width//2),
+                               tooth_height, tooth_width,
+                               facecolor='lightblue', edgecolor='blue', alpha=0.7)
+        ax.add_patch(tooth1_rect)
+        
+        # Tooth from Bar 2 (extending left)
+        tooth2_rect = Rectangle((bar2_x - bar_width//2 - tooth_height, tooth_center_y - tooth_width//2),
+                               tooth_height, tooth_width,
+                               facecolor='lightblue', edgecolor='blue', alpha=0.7)
+        ax.add_patch(tooth2_rect)
+        
+        # Label teeth
+        ax.text(bar1_x + bar_width//2 + tooth_height//2, tooth_center_y, f'T{t+1}', 
+               ha='center', va='center', fontsize=8, color='darkblue')
+    
+    # Draw laser sources
+    for i, (x, y) in enumerate(sources):
+        ax.plot(x, y, 'ro', markersize=10, 
+               markeredgecolor='darkred', markeredgewidth=2,
+               label='Laser Sources' if i == 0 else '')
+        ax.text(x + 5, y, f'S{i+1}', 
+               fontsize=8, color='darkred')
+    
+    # Add dimensions and annotations
+    ax.annotate('', xy=(bar1_x - bar_width//2, SIZE_Y - 20), 
+               xytext=(bar1_x + bar_width//2, SIZE_Y - 20),
+               arrowprops=dict(arrowstyle='<->', color='black'))
+    ax.text(bar1_x, SIZE_Y - 15, f'Bar Width\n{bar_width} pts', 
+           ha='center', va='bottom', fontsize=8)
+    
+    ax.annotate('', xy=(bar1_x + bar_width//2, first_tooth_y), 
+               xytext=(bar1_x + bar_width//2 + tooth_height, first_tooth_y),
+               arrowprops=dict(arrowstyle='<->', color='green'))
+    ax.text(bar1_x + bar_width//2 + tooth_height//2, first_tooth_y - 10, 
+           f'Tooth Height\n{tooth_height} pts', ha='center', va='top', fontsize=8)
+    
+    ax.annotate('', xy=(bar1_x, bar_end_y + 5), 
+               xytext=(bar2_x, bar_end_y + 5),
+               arrowprops=dict(arrowstyle='<->', color='purple'))
+    ax.text((bar1_x + bar2_x)//2, bar_end_y + 15, 
+           f'Gap: {bar2_x - bar1_x} pts', ha='center', va='bottom', fontsize=8)
+    
+    # Labels and formatting
+    ax.set_xlim(0, SIZE_X)
+    ax.set_ylim(0, SIZE_Y)
+    ax.set_xlabel('X (grid points)', fontsize=12)
+    ax.set_ylabel('Y (grid points)', fontsize=12)
+    ax.set_title('Dielectric Laser Accelerator - Bar and Teeth Geometry', fontsize=14)
+    ax.legend(loc='upper right')
+    ax.grid(True, alpha=0.3)
+    ax.set_aspect('equal')
+    
+    # Add parameter text
+    param_text = f'Parameters:\n'
+    param_text += f'• {num_teeth} teeth per bar\n'
+    param_text += f'• Tooth spacing: {tooth_spacing} pts\n'
+    param_text += f'• Bar width: {bar_width} pts\n'
+    param_text += f'• Tooth height: {tooth_height} pts\n'
+    param_text += f'• 5 laser sources in gap'
+    
+    ax.text(0.02, 0.98, param_text, transform=ax.transAxes, 
+           fontsize=10, verticalalignment='top',
+           bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+    
+    plt.tight_layout()
+    plt.savefig('geometry_check.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    print("✅ Geometry visualization saved as 'geometry_check.png'")
+    print(f"📐 Structure: {num_teeth} teeth per bar, {bar2_x - bar1_x} point gap")
+    print(f"🔍 Grid size: {SIZE_X} x {SIZE_Y} points")
+    print(f"📡 Sources: 5 laser sources in the gap between teeth")
+
+if __name__ == "__main__":
+    print("🔧 Checking Bar and Teeth Geometry...")
+    visualize_bar_geometry()
+    
+    # Calculate source positions (between teeth in gap)
+    sources = []
+    
+    for i in range(5):  # 5 sources between 6 teeth
+        x = gap_center_x
+        y = first_tooth_y + int((i + 0.5) * tooth_spacing)
+        sources.append((x, y))
         
         # Column 2 sources
         x2 = column2_x
