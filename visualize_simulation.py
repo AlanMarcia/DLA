@@ -102,6 +102,10 @@ class FDTDVisualizerWithSources:
         self.DX = self.geometry_params.get('DX', 10e-9)  # Grid spacing in meters
         self.grid_origin_x = self.geometry_params.get('grid_origin_x_m', 0.0)  # Grid origin in meters
         
+        # Get time parameters for timestep to time conversion
+        self.DT = self.geometry_params.get('DT', 1e-15)  # Time step in seconds
+        self.f1 = self.geometry_params.get('f1', 1.5e14)  # Frequency in Hz
+        
         # Extract parameters for external sources (in grid points) - directly from file
         first_tooth_y = int(self.geometry_params.get('first_tooth_y', 150))
         tooth_spacing = int(self.geometry_params.get('tooth_spacing', 100))
@@ -114,9 +118,23 @@ class FDTDVisualizerWithSources:
         print(f"  left_source_x = {left_source_x} (grid points)")
         print(f"  right_source_x = {right_source_x} (grid points)")
         
-        # Left side sources (9 sources between teeth)
+        # Left side sources - now including source before first tooth + 10 between teeth
         self.left_sources = []
         self.left_sources_physical = []  # Physical coordinates in micrometers
+        
+        # Source 0: before first tooth
+        left_source0_y = int(self.geometry_params.get('left_source0_y', first_tooth_y - int(0.5 * tooth_spacing)))
+        x_grid = left_source_x
+        y_grid = left_source0_y
+        
+        # Convert to physical coordinates (micrometers)
+        x_phys = (self.grid_origin_x + x_grid * self.DX) * 1e6  # μm
+        y_phys = (y_grid * self.DX) * 1e6  # μm
+        
+        self.left_sources.append((x_grid, y_grid))  # Grid coordinates
+        self.left_sources_physical.append((x_phys, y_phys))  # Physical coordinates
+        
+        # Sources 1-10: between teeth
         for i in range(10):
             x_grid = left_source_x
             y_grid = first_tooth_y + int((i + 0.5) * tooth_spacing)
@@ -128,9 +146,23 @@ class FDTDVisualizerWithSources:
             self.left_sources.append((x_grid, y_grid))  # Grid coordinates
             self.left_sources_physical.append((x_phys, y_phys))  # Physical coordinates
         
-        # Right side sources (9 sources between teeth)
+        # Right side sources - now including source before first tooth + 10 between teeth
         self.right_sources = []
         self.right_sources_physical = []  # Physical coordinates in micrometers
+        
+        # Source 0: before first tooth
+        right_source0_y = int(self.geometry_params.get('right_source0_y', first_tooth_y - int(0.5 * tooth_spacing)))
+        x_grid = right_source_x
+        y_grid = right_source0_y
+        
+        # Convert to physical coordinates (micrometers)
+        x_phys = (self.grid_origin_x + x_grid * self.DX) * 1e6  # μm
+        y_phys = (y_grid * self.DX) * 1e6  # μm
+        
+        self.right_sources.append((x_grid, y_grid))  # Grid coordinates
+        self.right_sources_physical.append((x_phys, y_phys))  # Physical coordinates
+        
+        # Sources 1-10: between teeth
         for i in range(10):
             x_grid = right_source_x
             y_grid = first_tooth_y + int((i + 0.5) * tooth_spacing)
@@ -149,6 +181,23 @@ class FDTDVisualizerWithSources:
         print(f"Left external sources (physical): {self.left_sources_physical}")
         print(f"Right external sources (physical): {self.right_sources_physical}")
         print(f"Total sources: {len(self.all_sources)}")
+
+    def timestep_to_time_info(self, timestep):
+        """Convert timestep to physical time information."""
+        current_time_s = timestep * self.DT  # Physical time in seconds
+        current_time_fs = current_time_s * 1e15  # Physical time in femtoseconds
+        current_time_periods = current_time_s * self.f1  # Time in periods of wavelength 1
+        
+        return {
+            'time_s': current_time_s,
+            'time_fs': current_time_fs,
+            'periods': current_time_periods
+        }
+
+    def format_time_string(self, timestep):
+        """Format a nice time string for plot titles."""
+        time_info = self.timestep_to_time_info(timestep)
+        return f"t={timestep} ({time_info['time_fs']:.1f} fs, {time_info['periods']:.2f} periods)"
 
     def load_field_data(self):
         """Load all field data files."""
@@ -292,14 +341,14 @@ class FDTDVisualizerWithSources:
         for i, (x, y) in enumerate(self.left_sources_physical):
             ax.plot(x, y, 'ro', markersize=10, markeredgecolor='darkred', 
                    markeredgewidth=2, label='Left Sources' if i == 0 else '')
-            ax.annotate(f'L{i+1}', (x, y), xytext=(-10, 5), 
+            ax.annotate(f'L{i}', (x, y), xytext=(-10, 5), 
                        textcoords='offset points', fontsize=8, color='darkred')
         
         # Right side sources
         for i, (x, y) in enumerate(self.right_sources_physical):
             ax.plot(x, y, 'go', markersize=10, markeredgecolor='darkgreen', 
                    markeredgewidth=2, label='Right Sources' if i == 0 else '')
-            ax.annotate(f'R{i+1}', (x, y), xytext=(10, 5), 
+            ax.annotate(f'R{i}', (x, y), xytext=(10, 5), 
                        textcoords='offset points', fontsize=8, color='darkgreen')
     
     def plot_single_timestep(self, timestep, save_figure=True, show_plot=True):
@@ -336,14 +385,15 @@ class FDTDVisualizerWithSources:
         # Labels and title
         ax.set_xlabel('X (μm)', fontsize=12)
         ax.set_ylabel('Y (μm)', fontsize=12)
-        ax.set_title(f'FDTD Simulation - Timestep {timestep}\n'
-                    f'External Laser Sources (18 total: 9L + 9R)', fontsize=14)
+        time_str = self.format_time_string(timestep)
+        ax.set_title(f'FDTD Simulation - {time_str}\n'
+                    f'External Laser Sources (22 total: 11L + 11R)', fontsize=14)
         
         # Add legend
         ax.legend(loc='upper right', fontsize=10)
         
         # Add parameter text
-        self.add_parameter_text(ax)
+        self.add_parameter_text(ax, timestep)
         
         plt.tight_layout()
         
@@ -359,7 +409,7 @@ class FDTDVisualizerWithSources:
         
         return fig
     
-    def add_parameter_text(self, ax):
+    def add_parameter_text(self, ax, timestep=None):
         """Add key parameters as text on the plot."""
         # Get key parameters
         lambda1_nm = self.geometry_params.get('lambda1_nm', 2000)
@@ -377,6 +427,12 @@ class FDTDVisualizerWithSources:
         param_text += f'Gap = {gap_width_um:.1f} μm\n'
         param_text += f'Domain = {domain_width_um:.1f} μm\n'
         param_text += f'Margin = {margin_um:.1f} μm'
+        
+        # Add time information if timestep is provided
+        if timestep is not None:
+            time_info = self.timestep_to_time_info(timestep)
+            param_text += f'\nTime: {time_info["time_fs"]:.1f} fs'
+            param_text += f'\nPeriods: {time_info["periods"]:.2f}'
         
         ax.text(0.02, 0.98, param_text, transform=ax.transAxes, 
                fontsize=10, verticalalignment='top',
@@ -430,12 +486,12 @@ class FDTDVisualizerWithSources:
         # Labels
         ax.set_xlabel('X (μm)', fontsize=12)
         ax.set_ylabel('Y (μm)', fontsize=12)
-        title = ax.set_title('FDTD Simulation Animation\nExternal Laser Sources (18 total)', fontsize=14)
+        title = ax.set_title('FDTD Simulation Animation\nExternal Laser Sources (22 total)', fontsize=14)
         
         # Add legend
         ax.legend(loc='upper right', fontsize=10)
         
-        # Add parameter text
+        # Add parameter text (no timestep for animation overview)
         self.add_parameter_text(ax)
         
         # Prepare animation elements
@@ -443,8 +499,9 @@ class FDTDVisualizerWithSources:
             timestep = timesteps[frame]
             data = self.field_data[timestep]
             im.set_array(data.T)
-            title.set_text(f'FDTD Simulation - Timestep {timestep}\n'
-                          f'External Laser Sources (18 total: 9L + 9R)')
+            time_str = self.format_time_string(timestep)
+            title.set_text(f'FDTD Simulation - {time_str}\n'
+                          f'External Laser Sources (22 total: 11L + 11R)')
             
             return [im, title]
         
@@ -613,7 +670,8 @@ class FDTDVisualizerWithSources:
         # Labels for field plot
         ax1.set_xlabel('X (μm)', fontsize=12)
         ax1.set_ylabel('Y (μm)', fontsize=12)
-        ax1.set_title(f'Electric Field - Timestep {timestep}', fontsize=14)
+        time_str = self.format_time_string(timestep)
+        ax1.set_title(f'Electric Field - {time_str}', fontsize=14)
         ax1.legend(loc='upper right', fontsize=10)
         
         if has_potential:
@@ -631,7 +689,7 @@ class FDTDVisualizerWithSources:
             # Labels for potential plot
             ax2.set_xlabel('X (μm)', fontsize=12)
             ax2.set_ylabel('Y (μm)', fontsize=12)
-            ax2.set_title(f'Electric Potential - Timestep {timestep}', fontsize=14)
+            ax2.set_title(f'Electric Potential - {time_str}', fontsize=14)
             ax2.legend(loc='upper right', fontsize=10)
             
             # Add parameter text to potential plot
@@ -691,8 +749,9 @@ class FDTDVisualizerWithSources:
         # Labels and title
         ax.set_xlabel('X (μm)', fontsize=12)
         ax.set_ylabel('Y (μm)', fontsize=12)
-        ax.set_title(f'Electric Potential - Timestep {timestep}\n'
-                    f'External Laser Sources (18 total: 9L + 9R)', fontsize=14)
+        time_str = self.format_time_string(timestep)
+        ax.set_title(f'Electric Potential - {time_str}\n'
+                    f'External Laser Sources (22 total: 11L + 11R)', fontsize=14)
         
         # Add legend
         ax.legend(loc='upper right', fontsize=10)
@@ -825,16 +884,18 @@ class FDTDVisualizerWithSources:
             # Labels and formatting
             ax.set_xlabel('Y Position (μm)', fontsize=12)
             ax.set_ylabel('Electric Field Ey (V/m)', fontsize=12)
-            ax.set_title(f'Electric Field Profile at Center - Timestep {timestep}\n'
+            time_str = self.format_time_string(timestep)
+            ax.set_title(f'Electric Field Profile at Center - {time_str}\n'
                         f'Cross-section at x = {(grid_origin_x + center_x_grid * DX) * 1e6:.2f} μm', fontsize=14)
             ax.grid(True, alpha=0.3)
             ax.legend()
             
             # Add parameter text
             center_x_phys = (grid_origin_x + center_x_grid * DX) * 1e6
+            time_info = self.timestep_to_time_info(timestep)
             param_text = f'Profile Position: x = {center_x_phys:.2f} μm\n'
             param_text += f'Between bars at gap center\n'
-            param_text += f'Timestep: {timestep}'
+            param_text += f'Time: {time_info["time_fs"]:.1f} fs ({time_info["periods"]:.2f} periods)'
             
             ax.text(0.02, 0.98, param_text, transform=ax.transAxes, 
                    fontsize=10, verticalalignment='top',
@@ -899,7 +960,8 @@ class FDTDVisualizerWithSources:
         # Labels for field plot
         ax1.set_xlabel('X (μm)', fontsize=12)
         ax1.set_ylabel('Y (μm)', fontsize=12)
-        ax1.set_title(f'Electric Field 2D - Timestep {timestep}', fontsize=14)
+        time_str = self.format_time_string(timestep)
+        ax1.set_title(f'Electric Field 2D - {time_str}', fontsize=14)
         ax1.legend(loc='upper right', fontsize=10)
         
         # Right plot: 1D profile
@@ -1021,7 +1083,8 @@ class FDTDVisualizerWithSources:
             if center_x_grid < self.field_data[timestep].shape[0]:
                 profile = self.field_data[timestep][center_x_grid, :]
                 line.set_ydata(profile)
-                title.set_text(f'Electric Field Profile - Timestep {timestep}\n'
+                time_str = self.format_time_string(timestep)
+                title.set_text(f'Electric Field Profile - {time_str}\n'
                               f'Cross-section at x = {center_x_phys:.2f} μm')
             return [line, title]
         
@@ -1071,8 +1134,8 @@ def main():
     # Plot a few key timesteps
     print("\n2. Plotting key timesteps...")
     timesteps = sorted(visualizer.field_data.keys())
-    key_timesteps = [timesteps[0], timesteps[len(timesteps)//3], 
-                    timesteps[2*len(timesteps)//3], timesteps[-1]]
+    # first 5 timesteps or all if less than 5
+    key_timesteps = timesteps[:5] if len(timesteps) >= 5 else timesteps
     
     for ts in key_timesteps:
         if ts in visualizer.field_data:

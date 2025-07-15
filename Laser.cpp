@@ -18,12 +18,18 @@ const double lambda1 = 2e-6;
 const double lambda2 = 2e-6; // Wavelength of laser 2 (m) = 1500 nm
 const double f1 = C0 / lambda1; // 
 const double f2 = C0 / lambda2; // Frequency of laser 2 (Hz)
-const double intensity1 = 5.0e9; // Intensity of laser 1 (V/m) - Target: 5 GV/m
-const double intensity2 = 5.0e9; // Intensity of laser 2 (V/m) - Target: 5 GV/m
+const double intensity1 = 1.0e9; // Intensity of laser 1 (V/m) - Target: 5 GV/m
+const double intensity2 = 1.0e9; // Intensity of laser 2 (V/m) - Target: 5 GV/m
 
 // --- Dielectric Bar Parameters ---
-// Relative permittivity of dielectric bars (SiO2)
-const double eps_r = 3.9; // Relative permittivity of the dielectric (dimensionless)
+// Refractive indices at 2000 nm wavelength
+const double n_air = 1.0; // Refractive index of air/vacuum
+const double n_sio2 = 1.44; // Refractive index of SiO2 at 2000 nm (near-IR)
+const double n_medium = n_air; // Medium where laser propagates (can be changed to other materials)
+
+// Relative permittivity calculated from refractive index: ε_r = n²
+const double eps_r_air = n_air * n_air; // Air/vacuum
+const double eps_r_sio2 = n_sio2 * n_sio2; // SiO2 bars (~2.07 at 2000 nm)
 
 // Bar geometry parameters (in SI units - meters)
 const double bar_width_m = 500e-9; // Bar thickness = 500 nm
@@ -32,17 +38,30 @@ const double bar2_x_m = 7e-6; // Bar 2 center position = 7 μm
 const double gap_between_bars_m = bar2_x_m - bar1_x_m; // Gap between bars = 2 μm
 
 // --- Simulation Parameters ---
-const double DX = 10e-9; // Grid spacing in meters (10 nm) - Finer resolution
-const double DT = DX / (C0 * sqrt(2.0)); // Time step (s) - Courant stability condition
+// Configurable grid resolution (change only this line to adjust fineness)
+const double DX = 10e-9; // Grid spacing in meters (1 nm = ultra-fine, 2 nm = very fine, 5 nm = fine, 10 nm = standard)
 
-// Calculate grid size to fit structure with 1 μm margins
-const double margin_x = 1e-6; // 1 μm margin on each side
-const double tooth_height_m = 0.3 * lambda1; // Tooth height in meters (600 nm)
+// Speed of light in the propagation medium
+const double c_medium = C0 / n_medium; // Speed of light in the medium
+const double DT = DX / (c_medium * sqrt(1.2)); // Time step (s) - Courant stability condition for medium
+
+// Wavelength in the medium (shorter than in vacuum)
+const double lambda1_medium = lambda1 / n_medium; // Wavelength in the propagation medium
+const double lambda2_medium = lambda2 / n_medium; // Wavelength in the propagation medium
+
+// Configurable domain sizes (physical dimensions)
+const double desired_domain_y_m = 12e-6; // Desired Y domain size in meters (12 μm)
+const double margin_x = 1e-6; // 1 μm margin on each side in X direction
+
+// Calculate grid size to fit structure with margins
+const double tooth_height_m = 0.3 * lambda1_medium; // Tooth height based on wavelength in medium
 const double structure_left = bar1_x_m - bar_width_m/2 - tooth_height_m; // Leftmost point
 const double structure_right = bar2_x_m + bar_width_m/2 + tooth_height_m; // Rightmost point
 const double total_domain_x = structure_right - structure_left + 2*margin_x; // Total domain width
-const int SIZE_X = (int)(total_domain_x / DX); // Grid size in x direction (~5.7 μm total)
-const int SIZE_Y = 1200; // Grid size in y direction (12 μm total with 10 nm resolution)  
+
+// Grid sizes automatically calculated from physical dimensions and DX
+const int SIZE_X = (int)(total_domain_x / DX); // Grid size in x direction (automatically scales with DX)
+const int SIZE_Y = (int)(desired_domain_y_m / DX); // Grid size in y direction (automatically scales with DX)
 const int MAX_TIME = 1000; // Total simulation time steps (dimensionless)
 
 // Calculate new grid origin to center structure with margins
@@ -58,12 +77,12 @@ const int gap_between_bars = bar2_x - bar1_x;
 const int PML_WIDTH = 10; // PML layer thickness (grid points)
 const double PML_SIGMA_MAX = 0.8 * (3.0 + 1.0) / (377.0 * DX); // Maximum conductivity
 
-// Teeth parameters (in terms of wavelength lambda1)
+// Teeth parameters (in terms of wavelength in medium)
 const int num_teeth = 10; // Number of teeth per bar
-const int tooth_width = (int)(0.3 * lambda1 / DX); // Width of each tooth = 0.3λ₁
-const int tooth_height = (int)(0.3 * lambda1 / DX); // Height of teeth extending into gap = 0.4λ₁
-const int tooth_spacing = (int)(0.5 * lambda1 / DX); // Spacing between teeth centers = 0.5λ₁
-const int first_tooth_y = (int)(1.5e-6 / DX); // Position of first tooth = 2 μm (SI units)
+const int tooth_width = (int)(0.3 * lambda1_medium / DX); // Width of each tooth = 0.3λ₁ in medium
+const int tooth_height = (int)(0.3 * lambda1_medium / DX); // Height of teeth extending into gap
+const int tooth_spacing = (int)(0.5 * lambda1_medium / DX); // Spacing between teeth centers = 0.5λ₁ in medium
+const int first_tooth_y = (int)(1.5e-6 / DX); // Position of first tooth = 1 μm (SI units)
 
 // Bar length (extends in y-direction) - in SI units
 const double bar_start_y_m = 2e-6; // Start at 1 μm
@@ -105,6 +124,10 @@ const int right_source8_y = first_tooth_y + (int)(7.5 * tooth_spacing); // Betwe
 const int right_source9_y = first_tooth_y + (int)(8.5 * tooth_spacing); // Between teeth 9 and 10
 const int right_source10_y = first_tooth_y + (int)(9.5 * tooth_spacing); // Between teeth 10 and 11
 
+// Additional sources before the first tooth
+const int left_source0_y = first_tooth_y - (int)(0.5 * tooth_spacing); // Before first tooth (left side)
+const int right_source0_y = first_tooth_y - (int)(0.5 * tooth_spacing); // Before first tooth (right side)
+
 // --- Main FDTD Class ---
 class FDTDSimulator {
 public:
@@ -126,6 +149,9 @@ public:
         for (int i = 0; i < SIZE_X; ++i) {
             for (int j = 0; j < SIZE_Y; ++j) {
                 bool in_dielectric = false;
+                
+                // Initialize with medium permittivity (air by default)
+                eps[i][j] = eps_r_air * EPS0;
                 
                 // Check if point is in Bar 1 (left bar)
                 if (i >= (bar1_x - bar_width/2) && i <= (bar1_x + bar_width/2) &&
@@ -157,7 +183,7 @@ public:
                 }
                 
                 if (in_dielectric) {
-                    eps[i][j] = eps_r * EPS0;
+                    eps[i][j] = eps_r_sio2 * EPS0; // SiO2 dielectric material
                 }
             }
         }
@@ -182,16 +208,16 @@ public:
         file.close();
     }
 
-    void save_potential_to_file(const std::string& filename) {
-        std::ofstream file(filename);
-        for (int i = 0; i < SIZE_X; ++i) {
-            for (int j = 0; j < SIZE_Y; ++j) {
-                file << potential[i][j] << " ";
-            }
-            file << "\n";
-        }
-        file.close();
-    }
+    // void save_potential_to_file(const std::string& filename) {
+    //     std::ofstream file(filename);
+    //     for (int i = 0; i < SIZE_X; ++i) {
+    //         for (int j = 0; j < SIZE_Y; ++j) {
+    //             file << potential[i][j] << " ";
+    //         }
+    //         file << "\n";
+    //     }
+    //     file.close();
+    // }
 
     void save_geometry_params(const std::string& filename) {
         std::ofstream file(filename);
@@ -244,10 +270,14 @@ public:
         file << "f2 " << f2 << "\n"; // Frequency in Hz
         file << "external_source_intensity " << external_source_intensity << "\n"; // External source intensity in V/m
         file << "external_source_intensity_GVm " << external_source_intensity * 1e-9 << "\n"; // External intensity in GV/m
-        file << "total_sources " << 10 << "\n"; // Total number of laser sources (5 left + 5 right external sources)
+        file << "total_sources " << 22 << "\n"; // Total number of laser sources (11 left + 11 right external sources)
         
         // Save dielectric parameters
-        file << "eps_r " << eps_r << "\n"; // Relative permittivity (dimensionless)
+        file << "eps_r_air " << eps_r_air << "\n"; // Relative permittivity of air (dimensionless)
+        file << "eps_r_sio2 " << eps_r_sio2 << "\n"; // Relative permittivity of SiO2 (dimensionless)
+        file << "n_air " << n_air << "\n"; // Refractive index of air
+        file << "n_sio2 " << n_sio2 << "\n"; // Refractive index of SiO2
+        file << "n_medium " << n_medium << "\n"; // Refractive index of propagation medium
         file << "num_teeth " << num_teeth << "\n"; // Number of teeth per bar
         
         // Bar dimensions (SI units and grid points)
@@ -296,9 +326,13 @@ public:
         file << "right_source_x_um " << right_source_x_m * 1e6 << "\n"; // Right source x in micrometers
         file << "right_source_x " << right_source_x << "\n"; // Right source x in grid points
         
-        // External source y-positions (between teeth)
+        // External source y-positions (before first tooth and between teeth)
+        file << "left_source0_y " << left_source0_y << "\n"; // Left source 0 y in grid points (before first tooth)
+        file << "left_source0_y_um " << left_source0_y * DX * 1e6 << "\n"; // Left source 0 y in micrometers
         file << "left_source1_y " << left_source1_y << "\n"; // Left source 1 y in grid points
         file << "left_source1_y_um " << left_source1_y * DX * 1e6 << "\n"; // Left source 1 y in micrometers
+        file << "right_source0_y " << right_source0_y << "\n"; // Right source 0 y in grid points (before first tooth)
+        file << "right_source0_y_um " << right_source0_y * DX * 1e6 << "\n"; // Right source 0 y in micrometers
         file << "right_source1_y " << right_source1_y << "\n"; // Right source 1 y in grid points
         file << "right_source1_y_um " << right_source1_y * DX * 1e6 << "\n"; // Right source 1 y in micrometers
         
@@ -420,7 +454,10 @@ private:
     }
 
     void apply_sources() {
-        // Left side external sources (5 sources between teeth, frequency f1)
+        // Left side external sources - source before first tooth
+        Ey[left_source_x][left_source0_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        
+        // Left side external sources (10 sources between teeth, frequency f1)
         Ey[left_source_x][left_source1_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
         Ey[left_source_x][left_source2_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
         Ey[left_source_x][left_source3_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
@@ -432,8 +469,10 @@ private:
         Ey[left_source_x][left_source9_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
         Ey[left_source_x][left_source10_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
 
+        // Right side external sources - source before first tooth
+        Ey[right_source_x][right_source0_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
         
-        // Right side external sources (5 sources between teeth, frequency f1)
+        // Right side external sources (10 sources between teeth, frequency f1)
         Ey[right_source_x][right_source1_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
         Ey[right_source_x][right_source2_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
         Ey[right_source_x][right_source3_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
@@ -562,6 +601,15 @@ int main() {
     std::cout << "OpenMP is not available - running in serial mode" << std::endl;
     #endif
     
+    // Print grid information
+    std::cout << "=== GRID CONFIGURATION ===" << std::endl;
+    std::cout << "Grid spacing (DX): " << DX * 1e9 << " nm" << std::endl;
+    std::cout << "Domain X: " << SIZE_X << " points = " << SIZE_X * DX * 1e6 << " μm" << std::endl;
+    std::cout << "Domain Y: " << SIZE_Y << " points = " << SIZE_Y * DX * 1e6 << " μm" << std::endl;
+    std::cout << "Total grid points: " << (long long)SIZE_X * SIZE_Y << std::endl;
+    std::cout << "Points per wavelength: " << lambda1 / DX << std::endl;
+    std::cout << "==========================" << std::endl;
+    
     FDTDSimulator sim;
 
     // Save geometry parameters at the beginning
@@ -573,18 +621,38 @@ int main() {
 
         // Save field data and print progress
         if (t % 50 == 0) {
-            std::cout << "Time step: " << t << std::endl;
-            sim.save_field_to_file("Ey_field_" + std::to_string(t) + ".dat");
-            sim.save_potential_to_file("potential_" + std::to_string(t) + ".dat");
+            double current_time_s = t * DT; // Physical time in seconds
+            double current_time_fs = current_time_s * 1e15; // Physical time in femtoseconds
+            double current_time_periods = current_time_s * f1; // Time in periods of wavelength 1
             
-            // Print potential statistics for monitoring
+            std::cout << "Time step: " << t 
+                      << " | Physical time: " << current_time_fs << " fs"
+                      << " (" << current_time_s << " s)"
+                      << " | Periods: " << current_time_periods << std::endl;
+            
+            sim.save_field_to_file("Ey_field_" + std::to_string(t) + ".dat");
+           // sim.save_potential_to_file("potential_" + std::to_string(t) + ".dat");
+            
+            // Print field statistics for monitoring
             if (t > 0) {
-                std::cout << "  Field and potential data saved." << std::endl;
+                std::cout << "  Field data saved." << std::endl;
             }
         }
     }
 
     std::cout << "Simulation finished." << std::endl;
+    
+    // Print final simulation summary
+    double total_sim_time_s = MAX_TIME * DT;
+    double total_sim_time_fs = total_sim_time_s * 1e15;
+    double total_periods = total_sim_time_s * f1;
+    
+    std::cout << "\n=== SIMULATION SUMMARY ===" << std::endl;
+    std::cout << "Total timesteps: " << MAX_TIME << std::endl;
+    std::cout << "Total physical time: " << total_sim_time_fs << " fs (" << total_sim_time_s << " s)" << std::endl;
+    std::cout << "Total periods simulated: " << total_periods << " periods of λ₁" << std::endl;
+    std::cout << "Time step size: " << DT * 1e15 << " fs (" << DT << " s)" << std::endl;
+    std::cout << "==========================" << std::endl;
 
     return 0;
 }
