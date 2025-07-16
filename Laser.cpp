@@ -18,8 +18,8 @@ const double lambda1 = 2e-6;
 const double lambda2 = 2e-6; // Wavelength of laser 2 (m) = 1500 nm
 const double f1 = C0 / lambda1; // 
 const double f2 = C0 / lambda2; // Frequency of laser 2 (Hz)
-const double intensity1 = 1.0e9; // Intensity of laser 1 (V/m) - Target: 5 GV/m
-const double intensity2 = 1.0e9; // Intensity of laser 2 (V/m) - Target: 5 GV/m
+const double intensity1 = 1.0e9; // Intensity of laser 1 (V/m) - Target: 1 GV/m
+const double intensity2 = 1.0e9; // Intensity of laser 2 (V/m) - Target: 1 GV/m
 
 // --- Dielectric Bar Parameters ---
 // Refractive indices at 2000 nm wavelength
@@ -77,18 +77,21 @@ const int gap_between_bars = bar2_x - bar1_x;
 const int PML_WIDTH = 10; // PML layer thickness (grid points)
 const double PML_SIGMA_MAX = 0.8 * (3.0 + 1.0) / (377.0 * DX); // Maximum conductivity
 
-// Teeth parameters (in terms of wavelength in medium)
-const int num_teeth = 10; // Number of teeth per bar
-const int tooth_width = (int)(0.3 * lambda1_medium / DX); // Width of each tooth = 0.3λ₁ in medium
-const int tooth_height = (int)(0.3 * lambda1_medium / DX); // Height of teeth extending into gap
-const int tooth_spacing = (int)(0.5 * lambda1_medium / DX); // Spacing between teeth centers = 0.5λ₁ in medium
-const int first_tooth_y = (int)(1.5e-6 / DX); // Position of first tooth = 1 μm (SI units)
-
 // Bar length (extends in y-direction) - in SI units
 const double bar_start_y_m = 2e-6; // Start at 1 μm
 const double bar_end_y_m = 12e-6; // End at 11 μm
 const int bar_start_y = (int)(bar_start_y_m / DX); // Convert to grid points
 const int bar_end_y = (int)(bar_end_y_m / DX); // Convert to grid points
+
+// Teeth parameters (in terms of wavelength in medium)
+
+const int tooth_width = (int)(0.2 * lambda1_medium / DX); // Width of each tooth = 0.3λ₁ in medium
+const int tooth_height = (int)(0.3 * lambda1_medium / DX); // Height of teeth extending into gap
+const int tooth_spacing = (int)(0.3 * lambda1_medium / DX); // Spacing between teeth centers = 0.5λ₁ in medium
+const int first_tooth_y = (int)(1.5e-6 / DX); // Position of first tooth = 1.5 μm (SI units)
+const int num_teeth = (bar_end_y-bar_start_y)/tooth_spacing; // Number of teeth per bar
+
+
 
 // --- Source Positions ---
 // External laser sources positioned outside the structure (in SI units)
@@ -98,35 +101,25 @@ const double right_source_x_m = 7.5e-6; // Right sources near right boundary
 // Laser intensity for external sources
 const double external_source_intensity = 2.0e9; // 2 GV/m intensity for external sources
 
-// Left side sources (positioned in the middle of spaces between teeth) - adjusted to new grid
+// Convert source positions to grid points (relative to new origin)
 const int left_source_x = (int)((left_source_x_m - grid_origin_x) / DX);
-const int left_source1_y = first_tooth_y + (int)(0.5 * tooth_spacing); // Between teeth 1 and 2
-const int left_source2_y = first_tooth_y + (int)(1.5 * tooth_spacing); // Between teeth 2 and 3
-const int left_source3_y = first_tooth_y + (int)(2.5 * tooth_spacing); // Between teeth 3 and 4
-const int left_source4_y = first_tooth_y + (int)(3.5 * tooth_spacing); // Between teeth 4 and 5
-const int left_source5_y = first_tooth_y + (int)(4.5 * tooth_spacing); // Between teeth 5 and 6
-const int left_source6_y = first_tooth_y + (int)(5.5 * tooth_spacing); // Between teeth 6 and 7
-const int left_source7_y = first_tooth_y + (int)(6.5 * tooth_spacing); // Between teeth 7 and 8
-const int left_source8_y = first_tooth_y + (int)(7.5 * tooth_spacing); // Between teeth 8 and 9
-const int left_source9_y = first_tooth_y + (int)(8.5 * tooth_spacing); // Between teeth 9 and 10
-const int left_source10_y = first_tooth_y + (int)(9.5 * tooth_spacing); // Between teeth 10 and 11
-
-// Right side sources (positioned in the middle of spaces between teeth) - adjusted to new grid
 const int right_source_x = (int)((right_source_x_m - grid_origin_x) / DX);
-const int right_source1_y = first_tooth_y + (int)(0.5 * tooth_spacing); // Between teeth 1 and 2
-const int right_source2_y = first_tooth_y + (int)(1.5 * tooth_spacing); // Between teeth 2 and 3
-const int right_source3_y = first_tooth_y + (int)(2.5 * tooth_spacing); // Between teeth 3 and 4
-const int right_source4_y = first_tooth_y + (int)(3.5 * tooth_spacing); // Between teeth 4 and 5
-const int right_source5_y = first_tooth_y + (int)(4.5 * tooth_spacing); // Between teeth 5 and 6
-const int right_source6_y = first_tooth_y + (int)(5.5 * tooth_spacing); // Between teeth 6 and 7
-const int right_source7_y = first_tooth_y + (int)(6.5 * tooth_spacing); // Between teeth 7 and 8
-const int right_source8_y = first_tooth_y + (int)(7.5 * tooth_spacing); // Between teeth 8 and 9
-const int right_source9_y = first_tooth_y + (int)(8.5 * tooth_spacing); // Between teeth 9 and 10
-const int right_source10_y = first_tooth_y + (int)(9.5 * tooth_spacing); // Between teeth 10 and 11
 
 // Additional sources before the first tooth
 const int left_source0_y = first_tooth_y - (int)(0.5 * tooth_spacing); // Before first tooth (left side)
 const int right_source0_y = first_tooth_y - (int)(0.5 * tooth_spacing); // Before first tooth (right side)
+
+// Dynamic arrays for sources between teeth (based on num_teeth)
+std::vector<int> left_sources_y(num_teeth);
+std::vector<int> right_sources_y(num_teeth);
+
+// Initialize source positions between teeth
+void initialize_source_positions() {
+    for (int i = 0; i < num_teeth; ++i) {
+        left_sources_y[i] = first_tooth_y + (int)((i + 0.5) * tooth_spacing);
+        right_sources_y[i] = first_tooth_y + (int)((i + 0.5) * tooth_spacing);
+    }
+}
 
 // --- Main FDTD Class ---
 class FDTDSimulator {
@@ -141,6 +134,9 @@ public:
         sigma_y(SIZE_X, std::vector<double>(SIZE_Y, 0.0)),
         time(0)
     {
+        // Initialize source positions
+        initialize_source_positions();
+        
         // Initialize PML absorbing boundaries
         initialize_pml();
         
@@ -270,7 +266,8 @@ public:
         file << "f2 " << f2 << "\n"; // Frequency in Hz
         file << "external_source_intensity " << external_source_intensity << "\n"; // External source intensity in V/m
         file << "external_source_intensity_GVm " << external_source_intensity * 1e-9 << "\n"; // External intensity in GV/m
-        file << "total_sources " << 22 << "\n"; // Total number of laser sources (11 left + 11 right external sources)
+        file << "total_sources " << 2 * (num_teeth + 1) << "\n"; // Total number of laser sources (num_teeth+1 left + num_teeth+1 right external sources)
+        file << "sources_per_side " << num_teeth + 1 << "\n"; // Number of sources per side (1 before teeth + num_teeth between teeth)
         
         // Save dielectric parameters
         file << "eps_r_air " << eps_r_air << "\n"; // Relative permittivity of air (dimensionless)
@@ -329,12 +326,16 @@ public:
         // External source y-positions (before first tooth and between teeth)
         file << "left_source0_y " << left_source0_y << "\n"; // Left source 0 y in grid points (before first tooth)
         file << "left_source0_y_um " << left_source0_y * DX * 1e6 << "\n"; // Left source 0 y in micrometers
-        file << "left_source1_y " << left_source1_y << "\n"; // Left source 1 y in grid points
-        file << "left_source1_y_um " << left_source1_y * DX * 1e6 << "\n"; // Left source 1 y in micrometers
         file << "right_source0_y " << right_source0_y << "\n"; // Right source 0 y in grid points (before first tooth)
         file << "right_source0_y_um " << right_source0_y * DX * 1e6 << "\n"; // Right source 0 y in micrometers
-        file << "right_source1_y " << right_source1_y << "\n"; // Right source 1 y in grid points
-        file << "right_source1_y_um " << right_source1_y * DX * 1e6 << "\n"; // Right source 1 y in micrometers
+        
+        // Dynamic sources between teeth (first few for reference)
+        if (num_teeth > 0) {
+            file << "left_source1_y " << left_sources_y[0] << "\n"; // Left source 1 y in grid points
+            file << "left_source1_y_um " << left_sources_y[0] * DX * 1e6 << "\n"; // Left source 1 y in micrometers
+            file << "right_source1_y " << right_sources_y[0] << "\n"; // Right source 1 y in grid points
+            file << "right_source1_y_um " << right_sources_y[0] * DX * 1e6 << "\n"; // Right source 1 y in micrometers
+        }
         
         // Design ratios and scaling factors
         file << "tooth_fill_factor " << (double)tooth_width / (double)tooth_spacing << "\n"; // Tooth fill factor
@@ -457,32 +458,18 @@ private:
         // Left side external sources - source before first tooth
         Ey[left_source_x][left_source0_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
         
-        // Left side external sources (10 sources between teeth, frequency f1)
-        Ey[left_source_x][left_source1_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[left_source_x][left_source2_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[left_source_x][left_source3_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[left_source_x][left_source4_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[left_source_x][left_source5_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[left_source_x][left_source6_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[left_source_x][left_source7_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[left_source_x][left_source8_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[left_source_x][left_source9_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[left_source_x][left_source10_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        // Left side external sources (dynamic number based on num_teeth)
+        for (int i = 0; i < num_teeth; ++i) {
+            Ey[left_source_x][left_sources_y[i]] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        }
 
         // Right side external sources - source before first tooth
         Ey[right_source_x][right_source0_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
         
-        // Right side external sources (10 sources between teeth, frequency f1)
-        Ey[right_source_x][right_source1_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[right_source_x][right_source2_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[right_source_x][right_source3_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[right_source_x][right_source4_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[right_source_x][right_source5_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[right_source_x][right_source6_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[right_source_x][right_source7_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[right_source_x][right_source8_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[right_source_x][right_source9_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
-        Ey[right_source_x][right_source10_y] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        // Right side external sources (dynamic number based on num_teeth)
+        for (int i = 0; i < num_teeth; ++i) {
+            Ey[right_source_x][right_sources_y[i]] += sin(2.0 * PI * f1 * time * DT) * external_source_intensity;
+        }
     }
 
     // void calculate_potential() {
@@ -608,6 +595,8 @@ int main() {
     std::cout << "Domain Y: " << SIZE_Y << " points = " << SIZE_Y * DX * 1e6 << " μm" << std::endl;
     std::cout << "Total grid points: " << (long long)SIZE_X * SIZE_Y << std::endl;
     std::cout << "Points per wavelength: " << lambda1 / DX << std::endl;
+    std::cout << "Number of teeth per bar: " << num_teeth << std::endl;
+    std::cout << "Total laser sources: " << 2 * (num_teeth + 1) << " (" << (num_teeth + 1) << " left + " << (num_teeth + 1) << " right)" << std::endl;
     std::cout << "==========================" << std::endl;
     
     FDTDSimulator sim;

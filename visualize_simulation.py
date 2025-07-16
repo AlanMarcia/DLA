@@ -22,10 +22,28 @@ import os
 import re
 from pathlib import Path
 
+# Optional GUI imports
+try:
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+    GUI_AVAILABLE = True
+except ImportError:
+    GUI_AVAILABLE = False
+    print("Warning: tkinter not available. GUI folder selection disabled.")
+
 class FDTDVisualizerWithSources:
-    def __init__(self, data_directory="."):
-        """Initialize the visualizer with simulation data directory."""
+    def __init__(self, data_directory=".", output_directory=None):
+        """Initialize the visualizer with simulation data directory.
+        
+        Parameters:
+        -----------
+        data_directory : str
+            Directory containing simulation data files
+        output_directory : str, optional
+            Directory where output files will be saved. If None, uses data_directory
+        """
         self.data_dir = Path(data_directory)
+        self.output_dir = Path(output_directory) if output_directory else self.data_dir
         self.geometry_params = {}
         self.field_files = []
         self.field_data = {}
@@ -43,6 +61,15 @@ class FDTDVisualizerWithSources:
         
         # Calculate source positions
         self.calculate_source_positions()
+        
+        # Create output directory if it doesn't exist
+        self.ensure_output_directory()
+        
+    def ensure_output_directory(self):
+        """Create output directory if it doesn't exist."""
+        if not self.output_dir.exists():
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Created output directory: {self.output_dir}")
         
     def load_geometry_params(self):
         """Load geometry parameters from the parameter file."""
@@ -85,7 +112,7 @@ class FDTDVisualizerWithSources:
             'bar_width': 50,  # Updated to match actual simulation (50 grid points = 500 nm)
             'bar1_x': 185,  # Updated to match actual simulation
             'bar2_x': 384,  # Updated to match actual simulation
-            'num_teeth': 10,  # Updated to match actual simulation
+            'num_teeth': 33,  # Updated to match actual simulation (calculated from bar length)
             'tooth_width': 20,  # Updated for finer grid
             'tooth_height': 30,  # Updated for finer grid
             'tooth_spacing': 50,  # Updated for finer grid
@@ -111,14 +138,16 @@ class FDTDVisualizerWithSources:
         tooth_spacing = int(self.geometry_params.get('tooth_spacing', 100))
         left_source_x = int(self.geometry_params.get('left_source_x', 134))
         right_source_x = int(self.geometry_params.get('right_source_x', 435))
+        num_teeth = int(self.geometry_params.get('num_teeth', 10))  # Read dynamic number of teeth
         
         print(f"Using source parameters from file:")
         print(f"  first_tooth_y = {first_tooth_y} (grid points)")
         print(f"  tooth_spacing = {tooth_spacing} (grid points)")
         print(f"  left_source_x = {left_source_x} (grid points)")
         print(f"  right_source_x = {right_source_x} (grid points)")
+        print(f"  num_teeth = {num_teeth}")
         
-        # Left side sources - now including source before first tooth + 10 between teeth
+        # Left side sources - now including source before first tooth + num_teeth between teeth
         self.left_sources = []
         self.left_sources_physical = []  # Physical coordinates in micrometers
         
@@ -134,8 +163,8 @@ class FDTDVisualizerWithSources:
         self.left_sources.append((x_grid, y_grid))  # Grid coordinates
         self.left_sources_physical.append((x_phys, y_phys))  # Physical coordinates
         
-        # Sources 1-10: between teeth
-        for i in range(10):
+        # Sources 1-num_teeth: between teeth (dynamic based on num_teeth)
+        for i in range(num_teeth):
             x_grid = left_source_x
             y_grid = first_tooth_y + int((i + 0.5) * tooth_spacing)
             
@@ -146,7 +175,7 @@ class FDTDVisualizerWithSources:
             self.left_sources.append((x_grid, y_grid))  # Grid coordinates
             self.left_sources_physical.append((x_phys, y_phys))  # Physical coordinates
         
-        # Right side sources - now including source before first tooth + 10 between teeth
+        # Right side sources - now including source before first tooth + num_teeth between teeth
         self.right_sources = []
         self.right_sources_physical = []  # Physical coordinates in micrometers
         
@@ -162,8 +191,8 @@ class FDTDVisualizerWithSources:
         self.right_sources.append((x_grid, y_grid))  # Grid coordinates
         self.right_sources_physical.append((x_phys, y_phys))  # Physical coordinates
         
-        # Sources 1-10: between teeth
-        for i in range(10):
+        # Sources 1-num_teeth: between teeth (dynamic based on num_teeth)
+        for i in range(num_teeth):
             x_grid = right_source_x
             y_grid = first_tooth_y + int((i + 0.5) * tooth_spacing)
             
@@ -389,16 +418,17 @@ class FDTDVisualizerWithSources:
         ax.set_title(f'FDTD Simulation - {time_str}\n'
                     f'External Laser Sources (22 total: 11L + 11R)', fontsize=14)
         
-        # Add legend
-        ax.legend(loc='upper right', fontsize=10)
+        # Add legend outside the plot area
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
         
         # Add parameter text
         self.add_parameter_text(ax, timestep)
         
         plt.tight_layout()
+        plt.subplots_adjust(right=0.85)  # Make room for legend
         
         if save_figure:
-            output_file = self.data_dir / f"field_plot_t{timestep:04d}.png"
+            output_file = self.output_dir / f"field_plot_t{timestep:04d}.png"
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
             print(f"Saved: {output_file}")
         
@@ -434,9 +464,10 @@ class FDTDVisualizerWithSources:
             param_text += f'\nTime: {time_info["time_fs"]:.1f} fs'
             param_text += f'\nPeriods: {time_info["periods"]:.2f}'
         
-        ax.text(0.02, 0.98, param_text, transform=ax.transAxes, 
-               fontsize=10, verticalalignment='top',
-               bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        # Position text outside the plot area on the right bottom
+        ax.text(1.07, 0.40, param_text, transform=ax.transAxes, 
+               fontsize=9, verticalalignment='top',
+               bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
     
     def plot_all_timesteps(self):
         """Plot all available timesteps."""
@@ -488,8 +519,8 @@ class FDTDVisualizerWithSources:
         ax.set_ylabel('Y (μm)', fontsize=12)
         title = ax.set_title('FDTD Simulation Animation\nExternal Laser Sources (22 total)', fontsize=14)
         
-        # Add legend
-        ax.legend(loc='upper right', fontsize=10)
+        # Add legend outside the plot area
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
         
         # Add parameter text (no timestep for animation overview)
         self.add_parameter_text(ax)
@@ -510,13 +541,14 @@ class FDTDVisualizerWithSources:
                                      interval=interval, blit=False, repeat=False)
         
         if save_animation:
-            output_file = self.data_dir / "field_animation.gif"
+            output_file = self.output_dir / "field_animation.gif"
             print(f"Saving animation to {output_file}...")
             # Use a low fps for a slower GIF
             anim.save(str(output_file), writer='pillow', fps=0.01, dpi=300)
             print(f"Animation saved: {output_file}")
 
         plt.tight_layout()
+        plt.subplots_adjust(right=0.85)  # Make room for legend
         plt.show()
         
         return anim
@@ -553,8 +585,8 @@ class FDTDVisualizerWithSources:
         ax.set_ylabel('Y (grid points)', fontsize=12)
         title = ax.set_title('Potential Animation\nExternal Laser Sources (10 total)', fontsize=14)
         
-        # Add legend
-        ax.legend(loc='upper right', fontsize=10)
+        # Add legend outside the plot area
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
         
         # Add parameter text
         self.add_parameter_text(ax)
@@ -574,12 +606,13 @@ class FDTDVisualizerWithSources:
                                      interval=interval, blit=False, repeat=False)
         
         if save_animation:
-            output_file = self.data_dir / "potential_animation.gif"
+            output_file = self.output_dir / "potential_animation.gif"
             print(f"Saving potential animation to {output_file}...")
             anim.save(str(output_file), writer='pillow', fps=0.01, dpi=120)
             print(f"Potential animation saved: {output_file}")
 
         plt.tight_layout()
+        plt.subplots_adjust(right=0.85)  # Make room for legend
         plt.show()
         
         return anim
@@ -612,8 +645,8 @@ class FDTDVisualizerWithSources:
         ax.set_ylabel('Y (μm)', fontsize=12)
         ax.set_title('FDTD Simulation Setup\nBar and Teeth Geometry with External Laser Sources', fontsize=14)
         
-        # Add legend
-        ax.legend(loc='upper right', fontsize=10)
+        # Add legend outside the plot area
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
         
         # Add parameter text
         self.add_parameter_text(ax)
@@ -622,9 +655,10 @@ class FDTDVisualizerWithSources:
         ax.grid(True, alpha=0.3)
         
         plt.tight_layout()
+        plt.subplots_adjust(right=0.85)  # Make room for legend
         
         # Save the overview
-        output_file = self.data_dir / "simulation_overview.png"
+        output_file = self.output_dir / "simulation_overview.png"
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         print(f"Overview saved: {output_file}")
         
@@ -702,9 +736,9 @@ class FDTDVisualizerWithSources:
         
         if save_figure:
             if has_potential:
-                output_file = self.data_dir / f"field_potential_t{timestep:04d}.png"
+                output_file = self.output_dir / f"field_potential_t{timestep:04d}.png"
             else:
-                output_file = self.data_dir / f"field_only_t{timestep:04d}.png"
+                output_file = self.output_dir / f"field_only_t{timestep:04d}.png"
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
             print(f"Saved: {output_file}")
         
@@ -753,16 +787,17 @@ class FDTDVisualizerWithSources:
         ax.set_title(f'Electric Potential - {time_str}\n'
                     f'External Laser Sources (22 total: 11L + 11R)', fontsize=14)
         
-        # Add legend
-        ax.legend(loc='upper right', fontsize=10)
+        # Add legend outside the plot area
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
         
         # Add parameter text
         self.add_parameter_text(ax)
         
         plt.tight_layout()
+        plt.subplots_adjust(right=0.85)  # Make room for legend
         
         if save_figure:
-            output_file = self.data_dir / f"potential_t{timestep:04d}.png"
+            output_file = self.output_dir / f"potential_t{timestep:04d}.png"
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
             print(f"Saved: {output_file}")
         
@@ -815,8 +850,8 @@ class FDTDVisualizerWithSources:
         ax.set_ylabel('Y (μm)', fontsize=12)
         ax.set_title('FDTD Simulation Geometry Debug\nFiner Grid (10 nm) - Check Positions', fontsize=14)
         
-        # Add legend
-        ax.legend(loc='upper right', fontsize=10)
+        # Add legend outside the plot area
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
         
         # Add parameter text
         self.add_parameter_text(ax)
@@ -825,9 +860,10 @@ class FDTDVisualizerWithSources:
         ax.grid(True, alpha=0.3)
         
         plt.tight_layout()
+        plt.subplots_adjust(right=0.85)  # Make room for legend
         
         # Save the debug plot
-        output_file = self.data_dir / "geometry_debug.png"
+        output_file = self.output_dir / "geometry_debug.png"
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         print(f"Debug geometry plot saved: {output_file}")
         
@@ -888,23 +924,24 @@ class FDTDVisualizerWithSources:
             ax.set_title(f'Electric Field Profile at Center - {time_str}\n'
                         f'Cross-section at x = {(grid_origin_x + center_x_grid * DX) * 1e6:.2f} μm', fontsize=14)
             ax.grid(True, alpha=0.3)
-            ax.legend()
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
             
-            # Add parameter text
+            # Add parameter text outside the plot area at bottom right
             center_x_phys = (grid_origin_x + center_x_grid * DX) * 1e6
             time_info = self.timestep_to_time_info(timestep)
             param_text = f'Profile Position: x = {center_x_phys:.2f} μm\n'
             param_text += f'Between bars at gap center\n'
             param_text += f'Time: {time_info["time_fs"]:.1f} fs ({time_info["periods"]:.2f} periods)'
             
-            ax.text(0.02, 0.98, param_text, transform=ax.transAxes, 
-                   fontsize=10, verticalalignment='top',
-                   bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+            ax.text(1.07, 0.30, param_text, transform=ax.transAxes, 
+                   fontsize=9, verticalalignment='top',
+                   bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.9))
             
             plt.tight_layout()
+            plt.subplots_adjust(right=0.85)  # Make room for legend
             
             if save_figure:
-                output_file = self.data_dir / f"field_profile_y_t{timestep:04d}.png"
+                output_file = self.output_dir / f"field_profile_y_t{timestep:04d}.png"
                 plt.savefig(output_file, dpi=300, bbox_inches='tight')
                 print(f"Saved field profile: {output_file}")
             
@@ -996,7 +1033,7 @@ class FDTDVisualizerWithSources:
         plt.tight_layout()
         
         if save_figure:
-            output_file = self.data_dir / f"field_2d_and_profile_t{timestep:04d}.png"
+            output_file = self.output_dir / f"field_2d_and_profile_t{timestep:04d}.png"
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
             print(f"Saved: {output_file}")
         
@@ -1072,7 +1109,7 @@ class FDTDVisualizerWithSources:
         ax.set_xlabel('Y Position (μm)', fontsize=12)
         ax.set_ylabel('Electric Field Ey (V/m)', fontsize=12)
         ax.grid(True, alpha=0.3)
-        ax.legend()
+        ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=10)
         
         # Title that will be updated
         title = ax.set_title(f'Electric Field Profile Animation\nCross-section at x = {center_x_phys:.2f} μm', fontsize=14)
@@ -1093,24 +1130,75 @@ class FDTDVisualizerWithSources:
                                      interval=interval, blit=False, repeat=False)
         
         if save_animation:
-            output_file = self.data_dir / "field_profile_animation.gif"
+            output_file = self.output_dir / "field_profile_animation.gif"
             print(f"Saving profile animation to {output_file}...")
             anim.save(str(output_file), writer='pillow', fps=1, dpi=150)
             print(f"Profile animation saved: {output_file}")
 
         plt.tight_layout()
+        plt.subplots_adjust(right=0.85)  # Make room for legend
         plt.show()
         
         return anim
 
-def main():
-    """Main function to run the visualization."""
-    print("FDTD Laser Simulation Visualizer")
-    print("=" * 35)
+def select_directories_gui():
+    """GUI function to select data and output directories."""
+    if not GUI_AVAILABLE:
+        print("GUI not available. Use command line interface.")
+        return None, None
+    
+    root = tk.Tk()
+    root.withdraw()  # Hide the main window
+    
+    # Select data directory
+    messagebox.showinfo("Select Directories", "First, select the directory containing simulation data files")
+    data_dir = filedialog.askdirectory(title="Select Data Directory")
+    
+    if not data_dir:
+        return None, None
+    
+    # Ask if user wants custom output directory
+    use_custom = messagebox.askyesno("Output Directory", 
+                                   "Do you want to specify a custom output directory?\n\n"
+                                   "Choose 'No' to save results in the same directory as data files.")
+    
+    output_dir = None
+    if use_custom:
+        output_dir = filedialog.askdirectory(title="Select Output Directory")
+        if not output_dir:
+            output_dir = data_dir  # Fall back to data directory
+    
+    root.destroy()
+    return data_dir, output_dir
+
+def main_gui():
+    """Main function with GUI directory selection."""
+    print("FDTD Laser Simulation Visualizer (GUI Mode)")
+    print("=" * 45)
+    
+    if not GUI_AVAILABLE:
+        print("GUI not available. Falling back to command line mode.")
+        main()
+        return
+    
+    # Select directories using GUI
+    data_dir, output_dir = select_directories_gui()
+    
+    if not data_dir:
+        print("No data directory selected. Exiting.")
+        return
     
     # Initialize visualizer
-    visualizer = FDTDVisualizerWithSources(".")
+    visualizer = FDTDVisualizerWithSources(data_dir, output_dir)
     
+    print(f"Data directory: {visualizer.data_dir}")
+    print(f"Output directory: {visualizer.output_dir}")
+    
+    # Continue with normal visualization workflow
+    run_visualization_workflow(visualizer)
+
+def run_visualization_workflow(visualizer):
+    """Run the main visualization workflow."""
     # First, create a geometry debug plot to check if everything is positioned correctly
     print("\n0. Creating geometry debug plot...")
     visualizer.create_geometry_only_plot()
@@ -1167,7 +1255,43 @@ def main():
         else:
             visualizer.create_animation(interval=1000)
     
-    print("\nVisualization complete!")
+    print(f"\nVisualization complete! Results saved in: {visualizer.output_dir}")
+
+def main():
+    """Main function to run the visualization."""
+    print("FDTD Laser Simulation Visualizer")
+    print("=" * 35)
+    
+    # Ask user for output directory
+    output_choice = input("\nChoose output directory:\n"
+                         "1. Same as data directory (default)\n"
+                         "2. Specify custom directory\n"
+                         "3. Use GUI to select directories\n"
+                         "Enter choice (1/2/3): ").strip()
+    
+    if output_choice == "3" and GUI_AVAILABLE:
+        main_gui()
+        return
+    elif output_choice == "3":
+        print("GUI not available. Using command line interface.")
+    
+    output_dir = None
+    if output_choice == "2":
+        output_dir = input("Enter output directory path: ").strip()
+        if output_dir and not Path(output_dir).exists():
+            create_dir = input(f"Directory '{output_dir}' doesn't exist. Create it? (y/n): ").strip().lower()
+            if create_dir != 'y':
+                print("Using default data directory for output.")
+                output_dir = None
+    
+    # Initialize visualizer
+    visualizer = FDTDVisualizerWithSources(".", output_dir)
+    
+    print(f"Data directory: {visualizer.data_dir}")
+    print(f"Output directory: {visualizer.output_dir}")
+    
+    # Run the visualization workflow
+    run_visualization_workflow(visualizer)
 
 if __name__ == "__main__":
     main()
