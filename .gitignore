@@ -30,6 +30,7 @@ field_plot_t*.png
 simulation_overview.png
 field_analysis.png
 synchronization_analysis.png
+field_2d_and_profile_t0*.png
 
 # Animation files
 field_animation.gif
